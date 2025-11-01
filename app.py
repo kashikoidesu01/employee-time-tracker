@@ -3,6 +3,7 @@ from streamlit_autorefresh import st_autorefresh
 import pandas as pd
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
+
 # --- CONFIGURACIÓN INICIAL ---
 st.set_page_config(page_title="Registro de Tiempo de Empleados", page_icon="⏱️", layout="centered")
 st.title("⏱️ Registro de Tiempo de Empleados")
@@ -30,9 +31,14 @@ if "turnos" not in st.session_state:
 usuario = st.radio("Selecciona tu tipo de usuario:", ["dispatcher", "boss"])
 grupo = st.selectbox("Selecciona grupo de trabajo:", list(st.session_state.grupos.keys()))
 
-# --- FUNCIÓN PARA OBTENER HORA FORMATEADA ---
+# --- FUNCIÓN DE HORA LOCAL ---
+def ahora():
+    """Devuelve la hora actual con zona horaria de Maryland"""
+    return datetime.now(ZoneInfo("America/New_York"))
+
 def hora_actual():
-    return datetime.now().strftime("%I:%M:%S %p")
+    """Devuelve hora formateada"""
+    return ahora().strftime("%I:%M:%S %p")
 
 # --- INICIAR / PAUSAR / DETENER TURNO ---
 col1, col2, col3 = st.columns(3)
@@ -40,7 +46,7 @@ col1, col2, col3 = st.columns(3)
 with col1:
     if st.button("▶️ Iniciar turno"):
         st.session_state.turnos[grupo] = {
-            "inicio": datetime.now(ZoneInfo("America/New_York")),
+            "inicio": ahora(),
             "pausado": False,
             "pausa_inicio": None,
             "tiempo_total": 0
@@ -52,10 +58,10 @@ with col2:
         turno = st.session_state.turnos[grupo]
         if not turno["pausado"]:
             turno["pausado"] = True
-            turno["pausa_inicio"] = datetime.now()
+            turno["pausa_inicio"] = ahora()
             st.warning(f"{grupo} en pausa desde {hora_actual()}")
         else:
-            pausa_duracion = (datetime.now() - turno["pausa_inicio"]).total_seconds()
+            pausa_duracion = (ahora() - turno["pausa_inicio"]).total_seconds()
             turno["tiempo_total"] += pausa_duracion
             turno["pausado"] = False
             st.info(f"{grupo} reanudó trabajo a las {hora_actual()}")
@@ -64,9 +70,9 @@ with col3:
     if grupo in st.session_state.turnos and st.button("⏹️ Detener"):
         turno = st.session_state.turnos.pop(grupo)
         if turno["pausado"]:
-            pausa_duracion = (datetime.now() - turno["pausa_inicio"]).total_seconds()
+            pausa_duracion = (ahora() - turno["pausa_inicio"]).total_seconds()
             turno["tiempo_total"] += pausa_duracion
-        duracion = (datetime.now() - turno["inicio"]).total_seconds() - turno["tiempo_total"]
+        duracion = (ahora() - turno["inicio"]).total_seconds() - turno["tiempo_total"]
         horas, resto = divmod(duracion, 3600)
         minutos, segundos = divmod(resto, 60)
         st.success(f"✅ Turno finalizado para {grupo}. Duración: {int(horas):02}:{int(minutos):02}:{int(segundos):02}")
@@ -75,7 +81,7 @@ with col3:
             "fecha": date.today().strftime("%Y-%m-%d"),
             "grupo": grupo,
             "inicio": turno["inicio"].strftime("%I:%M:%S %p"),
-            "fin": datetime.now().strftime("%I:%M:%S %p"),
+            "fin": ahora().strftime("%I:%M:%S %p"),
             "duración (segundos)": int(duracion)
         }])
         archivo = f"registros_{date.today().strftime('%Y-%m-%d')}.csv"
@@ -96,7 +102,7 @@ st.subheader("🟢 Grupos activos")
 for g, t in st.session_state.turnos.items():
     estado = "Pausado" if t["pausado"] else "Trabajando"
     tiempo_transcurrido = (
-        (datetime.now() - t["inicio"]).total_seconds() - t["tiempo_total"]
+        (ahora() - t["inicio"]).total_seconds() - t["tiempo_total"]
         if not t["pausado"]
         else (t["pausa_inicio"] - t["inicio"]).total_seconds() - t["tiempo_total"]
     )
@@ -127,12 +133,12 @@ if st.button("💾 Guardar registros del día"):
     if st.session_state.turnos:
         datos = []
         for g, t in st.session_state.turnos.items():
-            duracion = (datetime.now() - t["inicio"]).total_seconds() - t["tiempo_total"]
+            duracion = (ahora() - t["inicio"]).total_seconds() - t["tiempo_total"]
             datos.append({
                 "fecha": date.today().strftime("%Y-%m-%d"),
                 "grupo": g,
                 "inicio": t["inicio"].strftime("%I:%M:%S %p"),
-                "fin": datetime.now().strftime("%I:%M:%S %p"),
+                "fin": ahora().strftime("%I:%M:%S %p"),
                 "duración (segundos)": int(duracion)
             })
         df = pd.DataFrame(datos)

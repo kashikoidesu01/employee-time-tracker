@@ -2,7 +2,7 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 import pandas as pd
 from datetime import datetime, date
-
+from zoneinfo import ZoneInfo
 # --- CONFIGURACIÓN INICIAL ---
 st.set_page_config(page_title="Registro de Tiempo de Empleados", page_icon="⏱️", layout="centered")
 st.title("⏱️ Registro de Tiempo de Empleados")
@@ -40,7 +40,7 @@ col1, col2, col3 = st.columns(3)
 with col1:
     if st.button("▶️ Iniciar turno"):
         st.session_state.turnos[grupo] = {
-            "inicio": datetime.now(),
+            "inicio": datetime.now(ZoneInfo("America/New_York")),
             "pausado": False,
             "pausa_inicio": None,
             "tiempo_total": 0

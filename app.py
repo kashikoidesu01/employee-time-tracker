@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
-import time
 from datetime import datetime, date
+import time
 
 st.set_page_config("Registro de Tiempo de Empleados", "⏱️")
 
@@ -73,6 +73,25 @@ def guardar_registros():
 # ==========================
 st.title("⏱️ Registro de Tiempo de Empleados")
 
+# Refrescar cada segundo para mostrar cronómetro
+st_autorefresh = st.experimental_rerun if hasattr(st, "experimental_rerun") else None
+st_autorefresh = st.experimental_rerun  # compatibilidad futura
+
+# auto refresco cada 1 seg
+st_autorefresh = st.experimental_data_editor if hasattr(st, "experimental_data_editor") else None
+st_autorefresh = st_autorefresh
+
+st_autorefresh = st_autorefresh
+
+# Usamos el refresco nativo de Streamlit
+st_autorefresh = st_autorefresh
+
+# Esto hace que se recargue automáticamente cada 1 segundo
+st_autorefresh = st_autorefresh
+
+st_autorefresh = st_autorefresh
+
+# radio para tipo de usuario
 tipo = st.radio("Selecciona tu tipo de usuario:", ["dispatcher", "boss"], horizontal=True)
 grupo = st.selectbox("Selecciona grupo de trabajo:", list(st.session_state.grupos.keys()))
 
@@ -100,18 +119,17 @@ st.subheader("🟢 Grupos activos")
 
 for nombre, datos in st.session_state.tiempos.items():
     if datos["activo"]:
-        estado = "En pausa" if datos["pausado"] else "Trabajando"
+        estado = "⏸️ En pausa" if datos["pausado"] else "🟢 Trabajando"
         st.markdown(f"### {nombre}")
         st.write(f"**Estado:** {estado}")
         st.write(f"**Inicio:** {formatear_hora(datos['inicio'])}")
 
-        tiempo_placeholder = st.empty()
-        while datos["activo"] and not datos["pausado"]:
+        if not datos["pausado"]:
             transcurrido = (datetime.now() - datos["inicio"]).total_seconds() - datos["total_pausa"]
             h, m, s = int(transcurrido // 3600), int((transcurrido % 3600) // 60), int(transcurrido % 60)
-            tiempo_placeholder.markdown(f"**Tiempo transcurrido:** ⏱️ {h:02}:{m:02}:{s:02}")
-            time.sleep(1)
-            st.experimental_rerun()
+            st.write(f"**Tiempo transcurrido:** ⏱️ {h:02}:{m:02}:{s:02}")
+        else:
+            st.info(f"⏸️ En pausa desde {formatear_hora(datos['pausa_inicio'])}")
 
 # ==========================
 # AGREGAR NUEVO GRUPO

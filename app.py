@@ -2,141 +2,146 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 import pandas as pd
 from datetime import datetime, date
-import time
 
-st.set_page_config("Registro de Tiempo de Empleados", "⏱️")
+# --- CONFIGURACIÓN INICIAL ---
+st.set_page_config(page_title="Registro de Tiempo de Empleados", page_icon="⏱️", layout="centered")
+st.title("⏱️ Registro de Tiempo de Empleados")
 
-# ==========================
-# CONFIGURACIÓN INICIAL
-# ==========================
+# --- ESTILOS ---
+st.markdown("""
+    <style>
+    .big-font { font-size:22px !important; font-weight:bold; }
+    .timer { font-size:28px !important; color:#00FFAA; }
+    </style>
+""", unsafe_allow_html=True)
+
+# --- DATOS BASE ---
 if "grupos" not in st.session_state:
     st.session_state.grupos = {
         "Grupo Elizabeth": ["Elizabeth", "Cindy"],
         "Grupo Cecilia": ["Cecilia", "Ofelia"],
-        "Grupo Shirley": ["Shirley", "Kelly"]
+        "Grupo Shirley": ["Shirley", "Kelly"],
     }
 
-if "tiempos" not in st.session_state:
-    st.session_state.tiempos = {}
+if "turnos" not in st.session_state:
+    st.session_state.turnos = {}
 
-# ==========================
-# FUNCIONES
-# ==========================
-def formatear_hora(hora):
-    return hora.strftime("%I:%M:%S %p")
-
-def iniciar_turno(nombre):
-    st.session_state.tiempos[nombre] = {
-        "inicio": datetime.now(),
-        "pausado": False,
-        "pausa_inicio": None,
-        "total_pausa": 0,
-        "activo": True
-    }
-
-def pausar_reanudar(nombre):
-    d = st.session_state.tiempos[nombre]
-    if not d["pausado"]:
-        d["pausado"] = True
-        d["pausa_inicio"] = datetime.now()
-    else:
-        d["pausado"] = False
-        d["total_pausa"] += (datetime.now() - d["pausa_inicio"]).total_seconds()
-        d["pausa_inicio"] = None
-
-def detener_turno(nombre):
-    d = st.session_state.tiempos[nombre]
-    d["activo"] = False
-
-def guardar_registros():
-    hoy = date.today().strftime("%Y-%m-%d")
-    datos = []
-    for grupo, info in st.session_state.tiempos.items():
-        if "inicio" in info:
-            fin = datetime.now()
-            total = (fin - info["inicio"]).total_seconds() - info["total_pausa"]
-            datos.append({
-                "Fecha": hoy,
-                "Grupo": grupo,
-                "Inicio": formatear_hora(info["inicio"]),
-                "Fin": formatear_hora(fin),
-                "Tiempo trabajado (min)": round(total / 60, 2)
-            })
-    if datos:
-        df = pd.DataFrame(datos)
-        df.to_csv(f"registros_{hoy}.csv", index=False)
-        st.success(f"✅ Registros guardados como registros_{hoy}.csv")
-    else:
-        st.warning("⚠️ No hay datos para guardar.")
-
-# ==========================
-# INTERFAZ PRINCIPAL
-# ==========================
-st.title("⏱️ Registro de Tiempo de Empleados")
-
-# 🔁 Refrescar cada segundo para mostrar cronómetro en tiempo real
-st_autorefresh(interval=1000, key="refresco_cronometro")
-
-# radio para tipo de usuario
-tipo = st.radio("Selecciona tu tipo de usuario:", ["dispatcher", "boss"], horizontal=True)
+# --- VARIABLES ---
+usuario = st.radio("Selecciona tu tipo de usuario:", ["dispatcher", "boss"])
 grupo = st.selectbox("Selecciona grupo de trabajo:", list(st.session_state.grupos.keys()))
 
+# --- FUNCIÓN PARA OBTENER HORA FORMATEADA ---
+def hora_actual():
+    return datetime.now().strftime("%I:%M:%S %p")
+
+# --- INICIAR / PAUSAR / DETENER TURNO ---
 col1, col2, col3 = st.columns(3)
+
 with col1:
     if st.button("▶️ Iniciar turno"):
-        iniciar_turno(grupo)
+        st.session_state.turnos[grupo] = {
+            "inicio": datetime.now(),
+            "pausado": False,
+            "pausa_inicio": None,
+            "tiempo_total": 0
+        }
         st.success(f"Turno iniciado para {grupo}")
 
 with col2:
-    if grupo in st.session_state.tiempos:
-        if st.button("⏸️ Pausar / Reanudar"):
-            pausar_reanudar(grupo)
+    if grupo in st.session_state.turnos and st.button("⏸️ Pausar / Reanudar"):
+        turno = st.session_state.turnos[grupo]
+        if not turno["pausado"]:
+            turno["pausado"] = True
+            turno["pausa_inicio"] = datetime.now()
+            st.warning(f"{grupo} en pausa desde {hora_actual()}")
+        else:
+            pausa_duracion = (datetime.now() - turno["pausa_inicio"]).total_seconds()
+            turno["tiempo_total"] += pausa_duracion
+            turno["pausado"] = False
+            st.info(f"{grupo} reanudó trabajo a las {hora_actual()}")
 
 with col3:
-    if grupo in st.session_state.tiempos:
-        if st.button("⏹️ Detener"):
-            detener_turno(grupo)
+    if grupo in st.session_state.turnos and st.button("⏹️ Detener"):
+        turno = st.session_state.turnos.pop(grupo)
+        if turno["pausado"]:
+            pausa_duracion = (datetime.now() - turno["pausa_inicio"]).total_seconds()
+            turno["tiempo_total"] += pausa_duracion
+        duracion = (datetime.now() - turno["inicio"]).total_seconds() - turno["tiempo_total"]
+        horas, resto = divmod(duracion, 3600)
+        minutos, segundos = divmod(resto, 60)
+        st.success(f"✅ Turno finalizado para {grupo}. Duración: {int(horas):02}:{int(minutos):02}:{int(segundos):02}")
+        # Guardar registro
+        df = pd.DataFrame([{
+            "fecha": date.today().strftime("%Y-%m-%d"),
+            "grupo": grupo,
+            "inicio": turno["inicio"].strftime("%I:%M:%S %p"),
+            "fin": datetime.now().strftime("%I:%M:%S %p"),
+            "duración (segundos)": int(duracion)
+        }])
+        archivo = f"registros_{date.today().strftime('%Y-%m-%d')}.csv"
+        try:
+            existente = pd.read_csv(archivo)
+            df = pd.concat([existente, df], ignore_index=True)
+        except FileNotFoundError:
+            pass
+        df.to_csv(archivo, index=False)
 
-# ==========================
-# SECCIÓN: GRUPOS ACTIVOS
-# ==========================
-st.divider()
+# --- REFRESCO AUTOMÁTICO PARA MOSTRAR EL TIEMPO EN VIVO ---
+st_autorefresh(interval=1000, key="refresco_cronometro")
+
+# --- MOSTRAR GRUPOS ACTIVOS ---
+st.markdown("---")
 st.subheader("🟢 Grupos activos")
 
-for nombre, datos in st.session_state.tiempos.items():
-    if datos["activo"]:
-        estado = "⏸️ En pausa" if datos["pausado"] else "🟢 Trabajando"
-        st.markdown(f"### {nombre}")
-        st.write(f"**Estado:** {estado}")
-        st.write(f"**Inicio:** {formatear_hora(datos['inicio'])}")
+for g, t in st.session_state.turnos.items():
+    estado = "Pausado" if t["pausado"] else "Trabajando"
+    tiempo_transcurrido = (
+        (datetime.now() - t["inicio"]).total_seconds() - t["tiempo_total"]
+        if not t["pausado"]
+        else (t["pausa_inicio"] - t["inicio"]).total_seconds() - t["tiempo_total"]
+    )
+    horas, resto = divmod(max(0, tiempo_transcurrido), 3600)
+    minutos, segundos = divmod(resto, 60)
+    st.markdown(f"""
+    **{g}**  
+    - Estado: {estado}  
+    - Inicio: {t["inicio"].strftime("%I:%M:%S %p")}  
+    - Tiempo transcurrido: <span class='timer'>{int(horas):02}:{int(minutos):02}:{int(segundos):02}</span>
+    """, unsafe_allow_html=True)
 
-        if not datos["pausado"]:
-            transcurrido = (datetime.now() - datos["inicio"]).total_seconds() - datos["total_pausa"]
-            h, m, s = int(transcurrido // 3600), int((transcurrido % 3600) // 60), int(transcurrido % 60)
-            st.write(f"**Tiempo transcurrido:** ⏱️ {h:02}:{m:02}:{s:02}")
-        else:
-            st.info(f"⏸️ En pausa desde {formatear_hora(datos['pausa_inicio'])}")
-
-# ==========================
-# AGREGAR NUEVO GRUPO
-# ==========================
-st.divider()
+# --- AGREGAR NUEVOS GRUPOS ---
 with st.expander("➕ Agregar grupo o empleado"):
-    nuevo_grupo = st.text_input("Nombre del nuevo grupo")
-    empleados = st.text_input("Empleados (separa por comas)")
-    if st.button("Agregar"):
+    nuevo_grupo = st.text_input("Nombre del nuevo grupo:")
+    empleados = st.text_input("Empleados (separados por coma):")
+    if st.button("Agregar grupo"):
         if nuevo_grupo and empleados:
-            st.session_state.grupos[nuevo_grupo] = [e.strip() for e in empleados.split(",")]
-            st.success(f"✅ Grupo '{nuevo_grupo}' agregado correctamente.")
+            lista = [e.strip() for e in empleados.split(",") if e.strip()]
+            st.session_state.grupos[nuevo_grupo] = lista
+            st.success(f"✅ Grupo '{nuevo_grupo}' agregado con empleados: {', '.join(lista)}")
         else:
-            st.warning("⚠️ Ingresa el nombre del grupo y al menos un empleado.")
+            st.warning("Debes ingresar un nombre y al menos un empleado.")
 
-# ==========================
-# GUARDAR REGISTROS
-# ==========================
-st.divider()
-st.subheader("📦 Control diario")
-st.write(f"📅 Fecha actual: {date.today().strftime('%Y-%m-%d')}")
-
+# --- BOTÓN PARA GUARDAR REGISTROS MANUALMENTE ---
 if st.button("💾 Guardar registros del día"):
-    guardar_registros()
+    archivo = f"registros_{date.today().strftime('%Y-%m-%d')}.csv"
+    if st.session_state.turnos:
+        datos = []
+        for g, t in st.session_state.turnos.items():
+            duracion = (datetime.now() - t["inicio"]).total_seconds() - t["tiempo_total"]
+            datos.append({
+                "fecha": date.today().strftime("%Y-%m-%d"),
+                "grupo": g,
+                "inicio": t["inicio"].strftime("%I:%M:%S %p"),
+                "fin": datetime.now().strftime("%I:%M:%S %p"),
+                "duración (segundos)": int(duracion)
+            })
+        df = pd.DataFrame(datos)
+        try:
+            existente = pd.read_csv(archivo)
+            df = pd.concat([existente, df], ignore_index=True)
+        except FileNotFoundError:
+            pass
+        df.to_csv(archivo, index=False)
+        st.success(f"💾 Registros guardados en {archivo}")
+    else:
+        st.info("No hay grupos activos para guardar.")

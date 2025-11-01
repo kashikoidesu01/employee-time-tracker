@@ -141,7 +141,7 @@ with st.expander("➕ Gestionar grupos de trabajo"):
     else:
         st.info("No hay grupos para eliminar.")
 
-# --- BOTÓN PARA GUARDAR REGISTROS MANUALMENTE ---
+# --- BOTÓN PARA GUARDAR Y DESCARGAR REGISTROS ---
 st.markdown("---")
 if st.button("💾 Guardar registros del día"):
     archivo = f"registros_{date.today().strftime('%Y-%m-%d')}.csv"
@@ -160,12 +160,16 @@ if st.button("💾 Guardar registros del día"):
 
     if datos:
         df = pd.DataFrame(datos)
-        try:
-            existente = pd.read_csv(archivo)
-            df = pd.concat([existente, df], ignore_index=True)
-        except FileNotFoundError:
-            pass
-        df.to_csv(archivo, index=False)
-        st.success(f"💾 Registros guardados en {archivo}")
+        csv_data = df.to_csv(index=False).encode("utf-8")
+
+        st.success(f"✅ Registros generados para el {date.today().strftime('%Y-%m-%d')}")
+
+        # Botón para descargar el archivo
+        st.download_button(
+            label="⬇️ Descargar archivo CSV",
+            data=csv_data,
+            file_name=archivo,
+            mime="text/csv"
+        )
     else:
         st.info("No hay grupos activos para guardar.")

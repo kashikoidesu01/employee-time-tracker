@@ -115,8 +115,9 @@ for g, t in st.session_state.turnos.items():
     - Tiempo transcurrido: <span class='timer'>{int(horas):02}:{int(minutos):02}:{int(segundos):02}</span>
     """, unsafe_allow_html=True)
 
-# --- AGREGAR NUEVOS GRUPOS ---
-with st.expander("➕ Agregar grupo o empleado"):
+# --- AGREGAR / ELIMINAR GRUPOS ---
+with st.expander("➕ Gestionar grupos de trabajo"):
+    st.markdown("### Agregar nuevo grupo")
     nuevo_grupo = st.text_input("Nombre del nuevo grupo:")
     empleados = st.text_input("Empleados (separados por coma):")
     if st.button("Agregar grupo"):
@@ -127,27 +128,14 @@ with st.expander("➕ Agregar grupo o empleado"):
         else:
             st.warning("Debes ingresar un nombre y al menos un empleado.")
 
-# --- BOTÓN PARA GUARDAR REGISTROS MANUALMENTE ---
-if st.button("💾 Guardar registros del día"):
-    archivo = f"registros_{date.today().strftime('%Y-%m-%d')}.csv"
-    if st.session_state.turnos:
-        datos = []
-        for g, t in st.session_state.turnos.items():
-            duracion = (ahora() - t["inicio"]).total_seconds() - t["tiempo_total"]
-            datos.append({
-                "fecha": date.today().strftime("%Y-%m-%d"),
-                "grupo": g,
-                "inicio": t["inicio"].strftime("%I:%M:%S %p"),
-                "fin": ahora().strftime("%I:%M:%S %p"),
-                "duración (segundos)": int(duracion)
-            })
-        df = pd.DataFrame(datos)
-        try:
-            existente = pd.read_csv(archivo)
-            df = pd.concat([existente, df], ignore_index=True)
-        except FileNotFoundError:
-            pass
-        df.to_csv(archivo, index=False)
-        st.success(f"💾 Registros guardados en {archivo}")
+    st.markdown("---")
+    st.markdown("### 🗑️ Eliminar grupo existente")
+    if st.session_state.grupos:
+        grupo_eliminar = st.selectbox("Selecciona grupo a eliminar:", list(st.session_state.grupos.keys()), key="delbox")
+        if st.button("Eliminar grupo"):
+            if grupo_eliminar in st.session_state.turnos:
+                st.session_state.turnos.pop(grupo_eliminar, None)
+            st.session_state.grupos.pop(grupo_eliminar, None)
+            st.success(f"❌ Grupo '{grupo_eliminar}' eliminado correctamente.")
     else:
-        st.info("No hay grupos activos para guardar.")
+        st.info("No hay grupos para eliminar.")

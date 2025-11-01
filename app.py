@@ -73,23 +73,8 @@ def guardar_registros():
 # ==========================
 st.title("⏱️ Registro de Tiempo de Empleados")
 
-# Refrescar cada segundo para mostrar cronómetro
-st_autorefresh = st.experimental_rerun if hasattr(st, "experimental_rerun") else None
-st_autorefresh = st.experimental_rerun  # compatibilidad futura
-
-# auto refresco cada 1 seg
-st_autorefresh = st.experimental_data_editor if hasattr(st, "experimental_data_editor") else None
-st_autorefresh = st_autorefresh
-
-st_autorefresh = st_autorefresh
-
-# Usamos el refresco nativo de Streamlit
-st_autorefresh = st_autorefresh
-
-# Esto hace que se recargue automáticamente cada 1 segundo
-st_autorefresh = st_autorefresh
-
-st_autorefresh = st_autorefresh
+# 🔁 Refrescar cada segundo para mostrar cronómetro en tiempo real
+st_autorefresh(interval=1000, key="refresco_cronometro")
 
 # radio para tipo de usuario
 tipo = st.radio("Selecciona tu tipo de usuario:", ["dispatcher", "boss"], horizontal=True)

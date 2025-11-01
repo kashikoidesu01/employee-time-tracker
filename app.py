@@ -116,6 +116,7 @@ for g, t in st.session_state.turnos.items():
     """, unsafe_allow_html=True)
 
 # --- AGREGAR / ELIMINAR GRUPOS ---
+st.markdown("---")
 with st.expander("➕ Gestionar grupos de trabajo"):
     st.markdown("### Agregar nuevo grupo")
     nuevo_grupo = st.text_input("Nombre del nuevo grupo:")
@@ -139,3 +140,32 @@ with st.expander("➕ Gestionar grupos de trabajo"):
             st.success(f"❌ Grupo '{grupo_eliminar}' eliminado correctamente.")
     else:
         st.info("No hay grupos para eliminar.")
+
+# --- BOTÓN PARA GUARDAR REGISTROS MANUALMENTE ---
+st.markdown("---")
+if st.button("💾 Guardar registros del día"):
+    archivo = f"registros_{date.today().strftime('%Y-%m-%d')}.csv"
+    datos = []
+
+    # Guardar tanto turnos activos como pausados
+    for g, t in st.session_state.turnos.items():
+        duracion = (ahora() - t["inicio"]).total_seconds() - t["tiempo_total"]
+        datos.append({
+            "fecha": date.today().strftime("%Y-%m-%d"),
+            "grupo": g,
+            "inicio": t["inicio"].strftime("%I:%M:%S %p"),
+            "fin": ahora().strftime("%I:%M:%S %p"),
+            "duración (segundos)": int(duracion)
+        })
+
+    if datos:
+        df = pd.DataFrame(datos)
+        try:
+            existente = pd.read_csv(archivo)
+            df = pd.concat([existente, df], ignore_index=True)
+        except FileNotFoundError:
+            pass
+        df.to_csv(archivo, index=False)
+        st.success(f"💾 Registros guardados en {archivo}")
+    else:
+        st.info("No hay grupos activos para guardar.")

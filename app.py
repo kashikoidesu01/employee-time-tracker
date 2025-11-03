@@ -1,168 +1,169 @@
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 import pandas as pd
-import datetime
-import pytz
+from datetime import datetime, date
+from zoneinfo import ZoneInfo
 from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Image, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 import io
+import base64
+import os
 
-# --- Configuración de la página ---
-st.set_page_config(page_title="Registro de Tiempo de Empleados", layout="centered")
+# --- CONFIGURACIÓN INICIAL ---
+st.set_page_config(page_title="Registro de Tiempo", page_icon="⏱️", layout="centered")
+st.title("⏱️ Registro de Tiempo de Empleados")
 
-# --- Zona horaria Maryland ---
-tz = pytz.timezone("America/New_York")
+# --- ESTILOS ---
+st.markdown("""
+    <style>
+    .timer { font-size:28px !important; color:#00FFAA; font-weight:bold; }
+    </style>
+""", unsafe_allow_html=True)
 
-# --- Inicializar variables en sesión ---
+# --- DATOS BASE ---
 if "grupos" not in st.session_state:
-    st.session_state["grupos"] = {"Grupo Elizabeth": {}, "Grupo Cecilia": {}, "Grupo Shirley": {}}
-if "servicios" not in st.session_state:
-    st.session_state["servicios"] = {}
+    st.session_state.grupos = {
+        "Grupo Elizabeth": ["Elizabeth", "Cindy"],
+        "Grupo Cecilia": ["Cecilia", "Ofelia"],
+        "Grupo Shirley": ["Shirley", "Kelly"],
+    }
 
-# --- Título principal ---
-st.markdown("## ⏱️ Registro de Tiempo de Empleados")
+if "turnos" not in st.session_state:
+    st.session_state.turnos = {}
 
-# --- Selección de usuario y grupo ---
-tipo_usuario = st.radio("Selecciona tu tipo de usuario:", ["dispatcher", "boss"])
-grupo = st.selectbox("Selecciona grupo de trabajo:", list(st.session_state["grupos"].keys()))
-st.divider()
+if "pausas" not in st.session_state:
+    st.session_state.pausas = []
 
-# --- Funciones auxiliares ---
-def iniciar_turno(g):
-    st.session_state[f"inicio_{g}"] = datetime.datetime.now(tz)
-    st.session_state[f"trabajando_{g}"] = True
-    st.session_state[f"pausado_{g}"] = False
-    st.session_state[f"tiempo_total_{g}"] = 0
-    st.session_state[f"ultimo_inicio_{g}"] = datetime.datetime.now(tz)
-    st.success(f"✅ Turno iniciado para {g}")
+# --- VARIABLES ---
+usuario = st.radio("Selecciona tu tipo de usuario:", ["dispatcher", "boss"])
+grupo = st.selectbox("Selecciona grupo de trabajo:", list(st.session_state.grupos.keys()))
 
-def pausar_reanudar_turno(g):
-    if st.session_state.get(f"trabajando_{g}", False):
-        if st.session_state.get(f"pausado_{g}", False):
-            # Reanudar
-            st.session_state[f"pausado_{g}"] = False
-            st.session_state[f"ultimo_inicio_{g}"] = datetime.datetime.now(tz)
-            st.success(f"▶️ Reanudando turno para {g}")
-        else:
-            # Pausar
-            tiempo = (datetime.datetime.now(tz) - st.session_state[f"ultimo_inicio_{g}"]).total_seconds()
-            st.session_state[f"tiempo_total_{g}"] += tiempo
-            st.session_state[f"pausado_{g}"] = True
-            st.success(f"⏸️ Turno pausado para {g}")
-    else:
-        st.warning("Primero inicia el turno.")
+# --- FUNCIÓN HORA LOCAL ---
+def hora_actual():
+    tz = ZoneInfo("America/New_York")  # Maryland / East Coast
+    return datetime.now(tz)
 
-def detener_turno(g):
-    if st.session_state.get(f"trabajando_{g}", False):
-        tiempo = (datetime.datetime.now(tz) - st.session_state[f"ultimo_inicio_{g}"]).total_seconds()
-        st.session_state[f"tiempo_total_{g}"] += tiempo
-        st.session_state[f"trabajando_{g}"] = False
-        st.session_state[f"pausado_{g}"] = False
-        st.success(f"🛑 Turno detenido para {g}")
-    else:
-        st.warning("No hay turno activo para detener.")
+# --- REFRESCO AUTOMÁTICO ---
+st_autorefresh(interval=1000, key="refresco_cronometro")
 
-# --- Botones de control ---
+# --- BOTONES DE CONTROL ---
 col1, col2, col3 = st.columns(3)
+
+# INICIAR
 with col1:
     if st.button("▶️ Iniciar turno"):
-        iniciar_turno(grupo)
+        st.session_state.turnos[grupo] = {
+            "inicio": hora_actual(),
+            "pausado": False,
+            "pausa_inicio": None,
+            "tiempo_total": 0
+        }
+        st.success(f"Turno iniciado para {grupo}")
+
+# PAUSAR / REANUDAR (con formulario)
 with col2:
-    if st.button("⏸️ Pausar / Reanudar"):
-        pausar_reanudar_turno(grupo)
+    if grupo in st.session_state.turnos:
+        turno = st.session_state.turnos[grupo]
+        if st.button("⏸️ Pausar / Reanudar"):
+            if not turno["pausado"]:
+                turno["pausado"] = True
+                turno["pausa_inicio"] = hora_actual()
+
+                with st.expander(f"📝 Registrar servicio para {grupo}", expanded=True):
+                    cliente = st.text_input("Cliente:")
+                    direccion = st.text_input("Dirección:")
+                    hora_inicio = turno["inicio"].strftime("%I:%M:%S %p")
+                    tiempo_estimado = st.text_input("Tiempo estimado (min):")
+                    tiempo_viaje = st.text_input("Tiempo de viaje (min):")
+
+                    if st.button("💾 Guardar servicio"):
+                        st.session_state.pausas.append({
+                            "fecha": date.today().strftime("%Y-%m-%d"),
+                            "grupo": grupo,
+                            "cliente": cliente,
+                            "direccion": direccion,
+                            "hora_inicio": hora_inicio,
+                            "tiempo_estimado": tiempo_estimado,
+                            "tiempo_viaje": tiempo_viaje,
+                            "tiempo_trabajado": round((hora_actual() - turno["inicio"]).total_seconds() / 60, 2)
+                        })
+                        st.success("✅ Registro guardado correctamente.")
+            else:
+                pausa_duracion = (hora_actual() - turno["pausa_inicio"]).total_seconds()
+                turno["tiempo_total"] += pausa_duracion
+                turno["pausado"] = False
+                st.info(f"{grupo} reanudó trabajo a las {hora_actual().strftime('%I:%M:%S %p')}")
+
+# DETENER
 with col3:
-    if st.button("📤 Terminar día y Exportar"):
-        detener_turno(grupo)
+    if grupo in st.session_state.turnos and st.button("⏹️ Terminar"):
+        turno = st.session_state.turnos.pop(grupo)
+        if turno["pausado"]:
+            pausa_duracion = (hora_actual() - turno["pausa_inicio"]).total_seconds()
+            turno["tiempo_total"] += pausa_duracion
+        duracion = (hora_actual() - turno["inicio"]).total_seconds() - turno["tiempo_total"]
 
-# --- Formulario al pausar ---
-if st.session_state.get(f"pausado_{grupo}", False):
-    with st.expander(f"📝 Registrar servicio para {grupo}", expanded=True):
-        cliente = st.text_input(f"Cliente ({grupo})")
-        direccion = st.text_input(f"Dirección del cliente ({grupo})")
-        hora_inicio_servicio = st.time_input(f"Hora de inicio del servicio ({grupo})")
-        tiempo_estimado = st.text_input(f"Tiempo estimado (ej. 1h 30m) ({grupo})")
-        tiempo_viaje = st.text_input(f"Tiempo de viaje (ej. 20m) ({grupo})")
+        horas, resto = divmod(duracion, 3600)
+        minutos, segundos = divmod(resto, 60)
 
-        if st.button(f"💾 Guardar servicio ({grupo})"):
-            if grupo not in st.session_state["servicios"]:
-                st.session_state["servicios"][grupo] = []
+        st.success(f"✅ Turno finalizado para {grupo}. Duración: {int(horas):02}:{int(minutos):02}:{int(segundos):02}")
 
-            st.session_state["servicios"][grupo].append({
-                "grupo": grupo,
-                "cliente": cliente,
-                "direccion": direccion,
-                "hora_inicio_servicio": str(hora_inicio_servicio),
-                "tiempo_estimado": tiempo_estimado,
-                "tiempo_viaje": tiempo_viaje,
-                "tiempo_trabajado": str(datetime.timedelta(seconds=int(st.session_state.get(f"tiempo_total_{grupo}", 0)))),
-                "fecha_registro": datetime.datetime.now(tz).strftime("%Y-%m-%d %I:%M:%S %p")
-            })
-            st.success(f"✅ Servicio guardado para {grupo}")
-            st.session_state[f"pausado_{grupo}"] = False
+# --- MOSTRAR GRUPOS ACTIVOS ---
+st.markdown("---")
+st.subheader("🟢 Grupos activos")
 
-# --- Mostrar grupos activos ---
-st.divider()
-st.markdown("### 🟢 Grupos activos")
+for g, t in st.session_state.turnos.items():
+    estado = "⏸️ Pausado" if t["pausado"] else "🟢 Trabajando"
+    tiempo_transcurrido = (
+        (hora_actual() - t["inicio"]).total_seconds() - t["tiempo_total"]
+        if not t["pausado"]
+        else (t["pausa_inicio"] - t["inicio"]).total_seconds() - t["tiempo_total"]
+    )
+    horas, resto = divmod(max(0, tiempo_transcurrido), 3600)
+    minutos, segundos = divmod(resto, 60)
+    st.markdown(f"""
+    **{g}**  
+    - Estado: {estado}  
+    - Inicio: {t["inicio"].strftime("%I:%M:%S %p")}  
+    - Tiempo transcurrido: <span class='timer'>{int(horas):02}:{int(minutos):02}:{int(segundos):02}</span>
+    """, unsafe_allow_html=True)
 
-for gname in st.session_state["grupos"].keys():
-    if st.session_state.get(f"trabajando_{gname}", False):
-        estado = "Pausado" if st.session_state.get(f"pausado_{gname}", False) else "Trabajando"
-        tiempo_total = st.session_state.get(f"tiempo_total_{gname}", 0)
-        if not st.session_state.get(f"pausado_{gname}", False):
-            tiempo_total += (datetime.datetime.now(tz) - st.session_state[f"ultimo_inicio_{gname}"]).total_seconds()
+# --- GUARDAR Y DESCARGAR REGISTROS ---
+if st.button("💾 Terminar y generar reporte (CSV / PDF)"):
+    if st.session_state.pausas:
+        df = pd.DataFrame(st.session_state.pausas)
+        archivo_csv = f"registros_{date.today().strftime('%Y-%m-%d')}.csv"
+        df.to_csv(archivo_csv, index=False)
 
-        st.write(f"**{gname}** — Estado: {estado}")
-        st.write(f"Tiempo transcurrido: ⏰ {str(datetime.timedelta(seconds=int(tiempo_total)))}")
-
-# --- Exportar todo (PDF / CSV) ---
-if st.button("📄 Generar Reporte PDF / CSV"):
-    if not any(st.session_state["servicios"].values()):
-        st.warning("⚠️ No hay servicios registrados para exportar.")
-    else:
+        # Crear PDF limpio
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter)
-        elements = []
         styles = getSampleStyleSheet()
-        elements.append(Paragraph("<b>REPORTE DE SERVICIOS DIARIOS</b>", styles["Title"]))
+        elements = []
+
+        elements.append(Paragraph("Reporte Diario de Servicios", styles["Title"]))
         elements.append(Spacer(1, 12))
 
-        # Agregar logos
-        elements.append(Image("quality_logo.png", width=70, height=70))
-        elements[-1].hAlign = 'LEFT'
-        elements.append(Image("happyfeet_logo.png", width=70, height=70))
-        elements[-1].hAlign = 'RIGHT'
-
-        for g, servicios in st.session_state["servicios"].items():
-            elements.append(Paragraph(f"<b>{g}</b>", styles["Heading2"]))
-            data = [["Cliente", "Dirección", "Hora Inicio", "Tiempo Estimado", "Viaje", "Tiempo Trabajado", "Fecha"]]
-            for s in servicios:
-                data.append([
-                    s["cliente"], s["direccion"], s["hora_inicio_servicio"],
-                    s["tiempo_estimado"], s["tiempo_viaje"], s["tiempo_trabajado"], s["fecha_registro"]
-                ])
-
-            table = Table(data, repeatRows=1)
-            table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
-            ]))
-            elements.append(table)
-            elements.append(Spacer(1, 20))
-
+        data = [df.columns.tolist()] + df.values.tolist()
+        tabla = Table(data)
+        tabla.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.lightblue),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ]))
+        elements.append(tabla)
         doc.build(elements)
-        pdf_data = buffer.getvalue()
-        st.download_button("⬇️ Descargar PDF", pdf_data, file_name="reporte_servicios.pdf", mime="application/pdf")
 
-        # CSV
-        csv_buffer = io.StringIO()
-        all_data = []
-        for g, servicios in st.session_state["servicios"].items():
-            for s in servicios:
-                all_data.append(s)
-        df = pd.DataFrame(all_data)
-        df.to_csv(csv_buffer, index=False)
-        st.download_button("⬇️ Descargar CSV", csv_buffer.getvalue(), file_name="reporte_servicios.csv", mime="text/csv")
+        pdf_data = buffer.getvalue()
+        buffer.close()
+
+        st.success("✅ Registros guardados correctamente.")
+
+        st.download_button("⬇️ Descargar CSV", data=df.to_csv(index=False), file_name=archivo_csv, mime="text/csv")
+        st.download_button("⬇️ Descargar PDF", data=pdf_data, file_name=archivo_csv.replace(".csv", ".pdf"), mime="application/pdf")
+    else:
+        st.info("No hay registros para guardar.")

@@ -37,6 +37,9 @@ if "pausas" not in st.session_state:
 if "mostrar_formulario" not in st.session_state:
     st.session_state.mostrar_formulario = None
 
+if "archivos_generados" not in st.session_state:
+    st.session_state.archivos_generados = {}
+
 # --- VARIABLES ---
 usuario = st.radio("Selecciona tu tipo de usuario:", ["dispatcher", "boss"])
 grupo = st.selectbox("Selecciona grupo de trabajo:", list(st.session_state.grupos.keys()))
@@ -93,7 +96,7 @@ with col3:
         st.success(f"✅ Turno finalizado para {grupo}. Duración: {int(horas):02}:{int(minutos):02}:{int(segundos):02}")
         st.session_state.mostrar_formulario = None
 
-# --- FORMULARIO DE PAUSA (persistente) ---
+# --- FORMULARIO DE PAUSA ---
 if st.session_state.mostrar_formulario == grupo:
     with st.expander(f"📝 Registrar servicio para {grupo}", expanded=True):
         cliente = st.text_input("Cliente:", key=f"cliente_{grupo}")
@@ -163,8 +166,28 @@ if st.button("💾 Terminar y generar reporte (CSV / PDF)"):
         pdf_data = buffer.getvalue()
         buffer.close()
 
+        # ✅ Guardar en session_state para persistir botones de descarga
+        st.session_state.archivos_generados = {
+            "csv": df.to_csv(index=False),
+            "pdf": pdf_data,
+            "nombre_csv": archivo_csv
+        }
         st.success("✅ Registros guardados correctamente.")
-        st.download_button("⬇️ Descargar CSV", data=df.to_csv(index=False), file_name=archivo_csv, mime="text/csv")
-        st.download_button("⬇️ Descargar PDF", data=pdf_data, file_name=archivo_csv.replace(".csv", ".pdf"), mime="application/pdf")
     else:
         st.info("No hay registros para guardar.")
+
+# --- MOSTRAR BOTONES DE DESCARGA PERSISTENTES ---
+if st.session_state.archivos_generados:
+    st.download_button(
+        "⬇️ Descargar CSV",
+        data=st.session_state.archivos_generados["csv"],
+        file_name=st.session_state.archivos_generados["nombre_csv"],
+        mime="text/csv"
+    )
+    st.download_button(
+        "⬇️ Descargar PDF",
+        data=st.session_state.archivos_generados["pdf"],
+        file_name=st.session_state.archivos_generados["nombre_csv"].replace(".csv", ".pdf"),
+        mime="application/pdf"
+    )
+

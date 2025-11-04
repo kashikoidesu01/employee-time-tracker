@@ -3,20 +3,22 @@ from streamlit_autorefresh import st_autorefresh
 import pandas as pd
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
+from io import BytesIO
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib import colors
+from reportlab.lib.units import inch
 from reportlab.lib.styles import getSampleStyleSheet
-import io
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
 # --- CONFIGURACIÓN INICIAL ---
-st.set_page_config(page_title="Registro de Tiempo", page_icon="⏱️", layout="centered")
+st.set_page_config(page_title="Registro de Tiempo de Empleados", page_icon="⏱️", layout="centered")
 st.title("⏱️ Registro de Tiempo de Empleados")
 
 # --- ESTILOS ---
 st.markdown("""
     <style>
-    .timer { font-size:28px !important; color:#00FFAA; font-weight:bold; }
+    .big-font { font-size:22px !important; font-weight:bold; }
+    .timer { font-size:28px !important; color:#00FFAA; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -31,102 +33,90 @@ if "grupos" not in st.session_state:
 if "turnos" not in st.session_state:
     st.session_state.turnos = {}
 
-if "pausas" not in st.session_state:
-    st.session_state.pausas = []
+if "turnos_completos" not in st.session_state:
+    st.session_state.turnos_completos = {}
 
-if "mostrar_formulario" not in st.session_state:
-    st.session_state.mostrar_formulario = None
-
-if "archivos_generados" not in st.session_state:
-    st.session_state.archivos_generados = {}
+if "form_abierto" not in st.session_state:
+    st.session_state.form_abierto = None
 
 # --- VARIABLES ---
 usuario = st.radio("Selecciona tu tipo de usuario:", ["dispatcher", "boss"])
 grupo = st.selectbox("Selecciona grupo de trabajo:", list(st.session_state.grupos.keys()))
 
-# --- FUNCIÓN HORA LOCAL ---
+# --- HORA ACTUAL ---
 def hora_actual():
-    tz = ZoneInfo("America/New_York")  # Maryland / East Coast
-    return datetime.now(tz)
+    return datetime.now(ZoneInfo("America/New_York")).strftime("%I:%M:%S %p")
 
-# --- REFRESCO AUTOMÁTICO ---
-st_autorefresh(interval=1000, key="refresco_cronometro")
-
-# --- BOTONES DE CONTROL ---
+# --- INICIAR / PAUSAR / DETENER ---
 col1, col2, col3 = st.columns(3)
 
-# INICIAR
 with col1:
     if st.button("▶️ Iniciar turno"):
         st.session_state.turnos[grupo] = {
-            "inicio": hora_actual(),
+            "inicio": datetime.now(ZoneInfo("America/New_York")),
             "pausado": False,
             "pausa_inicio": None,
-            "tiempo_total": 0
+            "tiempo_total": 0,
+            "pausas": []
         }
         st.success(f"Turno iniciado para {grupo}")
-        st.session_state.mostrar_formulario = None
 
-# PAUSAR / REANUDAR
 with col2:
-    if grupo in st.session_state.turnos:
+    if grupo in st.session_state.turnos and st.button("⏸️ Pausar / Reanudar"):
         turno = st.session_state.turnos[grupo]
-        if st.button("⏸️ Pausar / Reanudar"):
-            if not turno["pausado"]:
-                turno["pausado"] = True
-                turno["pausa_inicio"] = hora_actual()
-                st.session_state.mostrar_formulario = grupo  # <<< mantener abierto el formulario
-            else:
-                pausa_duracion = (hora_actual() - turno["pausa_inicio"]).total_seconds()
-                turno["tiempo_total"] += pausa_duracion
-                turno["pausado"] = False
-                st.session_state.mostrar_formulario = None
-                st.info(f"{grupo} reanudó trabajo a las {hora_actual().strftime('%I:%M:%S %p')}")
+        if not turno["pausado"]:
+            turno["pausado"] = True
+            turno["pausa_inicio"] = datetime.now(ZoneInfo("America/New_York"))
+            st.session_state.form_abierto = grupo
+        else:
+            pausa_duracion = (datetime.now(ZoneInfo("America/New_York")) - turno["pausa_inicio"]).total_seconds()
+            turno["tiempo_total"] += pausa_duracion
+            turno["pausado"] = False
+            st.info(f"{grupo} reanudó trabajo a las {hora_actual()}")
 
-# DETENER
 with col3:
     if grupo in st.session_state.turnos and st.button("⏹️ Terminar"):
         turno = st.session_state.turnos.pop(grupo)
-        if turno["pausado"]:
-            pausa_duracion = (hora_actual() - turno["pausa_inicio"]).total_seconds()
-            turno["tiempo_total"] += pausa_duracion
-        duracion = (hora_actual() - turno["inicio"]).total_seconds() - turno["tiempo_total"]
-        horas, resto = divmod(duracion, 3600)
-        minutos, segundos = divmod(resto, 60)
-        st.success(f"✅ Turno finalizado para {grupo}. Duración: {int(horas):02}:{int(minutos):02}:{int(segundos):02}")
-        st.session_state.mostrar_formulario = None
+        duracion = (datetime.now(ZoneInfo("America/New_York")) - turno["inicio"]).total_seconds() - turno["tiempo_total"]
+        turno["duracion"] = duracion
+        st.session_state.turnos_completos[grupo] = turno
+        st.success(f"✅ Turno finalizado para {grupo}")
 
 # --- FORMULARIO DE PAUSA ---
-if st.session_state.mostrar_formulario == grupo:
-    with st.expander(f"📝 Registrar servicio para {grupo}", expanded=True):
-        cliente = st.text_input("Cliente:", key=f"cliente_{grupo}")
-        direccion = st.text_input("Dirección:", key=f"direccion_{grupo}")
-        tiempo_estimado = st.text_input("Tiempo estimado (min):", key=f"estimado_{grupo}")
-        tiempo_viaje = st.text_input("Tiempo de viaje (min):", key=f"viaje_{grupo}")
+if st.session_state.form_abierto:
+    g = st.session_state.form_abierto
+    st.markdown(f"### 📝 Registrar pausa para {g}")
+    with st.form(f"form_{g}"):
+        cliente = st.text_input("Cliente")
+        direccion = st.text_input("Dirección")
+        hora_inicio = st.text_input("Hora de inicio", value=hora_actual())
+        tiempo_estimado = st.text_input("Tiempo estimado (min)")
+        tiempo_viaje = st.text_input("Tiempo de viaje (min)")
+        guardar = st.form_submit_button("Guardar información de pausa")
 
-        if st.button("💾 Guardar servicio", key=f"guardar_{grupo}"):
-            turno = st.session_state.turnos[grupo]
-            st.session_state.pausas.append({
-                "fecha": date.today().strftime("%Y-%m-%d"),
-                "grupo": grupo,
+        if guardar:
+            pausa_data = {
                 "cliente": cliente,
                 "direccion": direccion,
-                "hora_inicio": turno["inicio"].strftime("%I:%M:%S %p"),
+                "hora_inicio": hora_inicio,
                 "tiempo_estimado": tiempo_estimado,
-                "tiempo_viaje": tiempo_viaje,
-                "tiempo_trabajado": round((hora_actual() - turno["inicio"]).total_seconds() / 60, 2)
-            })
-            st.session_state.mostrar_formulario = None
-            st.success("✅ Servicio guardado correctamente.")
+                "tiempo_viaje": tiempo_viaje
+            }
+            st.session_state.turnos[g]["pausas"].append(pausa_data)
+            st.session_state.form_abierto = None
+            st.success(f"Pausa registrada para {g}")
+
+# --- REFRESCO AUTOMÁTICO ---
+st_autorefresh(interval=1000, key="refresco_cronometro")
 
 # --- MOSTRAR GRUPOS ACTIVOS ---
 st.markdown("---")
 st.subheader("🟢 Grupos activos")
 
 for g, t in st.session_state.turnos.items():
-    estado = "⏸️ Pausado" if t["pausado"] else "🟢 Trabajando"
+    estado = "Pausado" if t["pausado"] else "Trabajando"
     tiempo_transcurrido = (
-        (hora_actual() - t["inicio"]).total_seconds() - t["tiempo_total"]
+        (datetime.now(ZoneInfo("America/New_York")) - t["inicio"]).total_seconds() - t["tiempo_total"]
         if not t["pausado"]
         else (t["pausa_inicio"] - t["inicio"]).total_seconds() - t["tiempo_total"]
     )
@@ -139,55 +129,68 @@ for g, t in st.session_state.turnos.items():
     - Tiempo transcurrido: <span class='timer'>{int(horas):02}:{int(minutos):02}:{int(segundos):02}</span>
     """, unsafe_allow_html=True)
 
-# --- GUARDAR Y DESCARGAR REGISTROS ---
-if st.button("💾 Terminar y generar reporte (CSV / PDF)"):
-    if st.session_state.pausas:
-        df = pd.DataFrame(st.session_state.pausas)
-        archivo_csv = f"registros_{date.today().strftime('%Y-%m-%d')}.csv"
-        df.to_csv(archivo_csv, index=False)
+# --- BOTÓN FINAL PARA GENERAR REPORTES ---
+st.markdown("---")
+if st.button("📄 Terminar y generar reporte (CSV / PDF)"):
+    if st.session_state.turnos_completos:
+        datos = []
+        for g, t in st.session_state.turnos_completos.items():
+            for pausa in t.get("pausas", []):
+                duracion = str(pd.to_timedelta(t["duracion"], unit="s"))
+                datos.append({
+                    "grupo": g,
+                    "cliente": pausa.get("cliente", ""),
+                    "direccion": pausa.get("direccion", ""),
+                    "hora_inicio": pausa.get("hora_inicio", ""),
+                    "tiempo_estimado": pausa.get("tiempo_estimado", ""),
+                    "tiempo_viaje": pausa.get("tiempo_viaje", ""),
+                    "duracion": duracion
+                })
 
-        # Crear PDF limpio
-        buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter)
-        styles = getSampleStyleSheet()
+        df = pd.DataFrame(datos)
+        csv_filename = f"reporte_{date.today().strftime('%Y-%m-%d')}.csv"
+        df.to_csv(csv_filename, index=False)
+
+        # --- GENERAR PDF ---
+        pdf_filename = f"reporte_{date.today().strftime('%Y-%m-%d')}.pdf"
+        doc = SimpleDocTemplate(
+            pdf_filename,
+            pagesize=letter,
+            rightMargin=30,
+            leftMargin=30,
+            topMargin=30,
+            bottomMargin=30
+        )
         elements = []
+        styles = getSampleStyleSheet()
+        style_title = styles["Title"]
 
-        elements.append(Paragraph("Reporte Diario de Servicios", styles["Title"]))
+        elements.append(Paragraph("Reporte Diario de Actividades", style_title))
         elements.append(Spacer(1, 12))
-        data = [df.columns.tolist()] + df.values.tolist()
-        tabla = Table(data)
-        tabla.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.lightblue),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+
+        data = [["Grupo", "Cliente", "Dirección", "Hora inicio", "Tiempo estimado", "Tiempo viaje", "Duración (HH:MM:SS)"]]
+        for _, row in df.iterrows():
+            data.append(list(row.values))
+
+        col_widths = [1.2*inch, 1.3*inch, 1.6*inch, 1*inch, 1.2*inch, 1.2*inch, 1.2*inch]
+        table = Table(data, colWidths=col_widths, repeatRows=1)
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.Color(0.2, 0.4, 0.6)),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("WORDWRAP", (0, 0), (-1, -1), None)
         ]))
-        elements.append(tabla)
+
+        elements.append(table)
         doc.build(elements)
-        pdf_data = buffer.getvalue()
-        buffer.close()
 
-        # ✅ Guardar en session_state para persistir botones de descarga
-        st.session_state.archivos_generados = {
-            "csv": df.to_csv(index=False),
-            "pdf": pdf_data,
-            "nombre_csv": archivo_csv
-        }
-        st.success("✅ Registros guardados correctamente.")
+        st.download_button("⬇️ Descargar CSV", open(csv_filename, "rb"), file_name=csv_filename)
+        st.download_button("⬇️ Descargar PDF", open(pdf_filename, "rb"), file_name=pdf_filename)
+        st.success("✅ Reporte generado correctamente.")
     else:
-        st.info("No hay registros para guardar.")
-
-# --- MOSTRAR BOTONES DE DESCARGA PERSISTENTES ---
-if st.session_state.archivos_generados:
-    st.download_button(
-        "⬇️ Descargar CSV",
-        data=st.session_state.archivos_generados["csv"],
-        file_name=st.session_state.archivos_generados["nombre_csv"],
-        mime="text/csv"
-    )
-    st.download_button(
-        "⬇️ Descargar PDF",
-        data=st.session_state.archivos_generados["pdf"],
-        file_name=st.session_state.archivos_generados["nombre_csv"].replace(".csv", ".pdf"),
-        mime="application/pdf"
-    )
-
+        st.info("No hay datos para generar el reporte.")

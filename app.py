@@ -4,7 +4,7 @@ import pandas as pd
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
 from io import BytesIO
-from reportlab.lib.pagesizes import letter
+from reportlab.lib.pagesizes import letter, landscape
 from reportlab.lib import colors
 from reportlab.lib.units import inch
 from reportlab.lib.styles import getSampleStyleSheet
@@ -65,17 +65,15 @@ with col2:
     if grupo in st.session_state.turnos and st.button("⏸️ Pausar / Reanudar"):
         turno = st.session_state.turnos[grupo]
         if not turno["pausado"]:
-            # --- Pausar turno ---
             turno["pausado"] = True
             turno["pausa_inicio"] = datetime.now(ZoneInfo("America/New_York"))
-            st.session_state.form_abierto = grupo  # Abrir formulario
+            st.session_state.form_abierto = grupo
             st.info(f"{grupo} pausó trabajo a las {hora_actual()}")
         else:
-            # --- Reanudar turno ---
             pausa_duracion = (datetime.now(ZoneInfo("America/New_York")) - turno["pausa_inicio"]).total_seconds()
             turno["tiempo_total"] += pausa_duracion
             turno["pausado"] = False
-            st.session_state.form_abierto = None  # Cerrar formulario
+            st.session_state.form_abierto = None
             st.info(f"{grupo} reanudó trabajo a las {hora_actual()}")
 
 with col3:
@@ -93,7 +91,7 @@ if st.session_state.form_abierto:
     with st.form(f"form_{g}"):
         cliente = st.text_input("Cliente", value="")
         direccion = st.text_input("Dirección", value="")
-        hora_inicio = st.text_input("Hora de inicio", value="")  # AHORA VACÍO
+        hora_inicio = st.text_input("Hora de inicio", value="")
         tiempo_estimado = st.text_input("Tiempo estimado (min)", value="")
         tiempo_viaje = st.text_input("Tiempo de viaje (min)", value="")
         guardar = st.form_submit_button("Guardar información de pausa")
@@ -152,49 +150,47 @@ if st.button("📄 Terminar y generar reporte (CSV / PDF)"):
                 })
 
         df = pd.DataFrame(datos)
-        csv_filename = f"reporte_{date.today().strftime('%Y-%m-%d')}.csv"
-        df.to_csv(csv_filename, index=False)
 
-        # --- GENERAR PDF ---
-        pdf_filename = f"reporte_{date.today().strftime('%Y-%m-%d')}.pdf"
+        # --- DESCARGA CSV (usando BytesIO en memoria) ---
+        csv_buffer = BytesIO()
+        df.to_csv(csv_buffer, index=False)
+        csv_buffer.seek(0)
+
+        # --- GENERAR PDF CON AJUSTE AUTOMÁTICO ---
+        pdf_buffer = BytesIO()
         doc = SimpleDocTemplate(
-            pdf_filename,
-            pagesize=letter,
-            rightMargin=30,
-            leftMargin=30,
-            topMargin=30,
-            bottomMargin=30
+            pdf_buffer,
+            pagesize=landscape(letter),
+            rightMargin=20, leftMargin=20, topMargin=20, bottomMargin=20
         )
         elements = []
         styles = getSampleStyleSheet()
-        style_title = styles["Title"]
-
-        elements.append(Paragraph("Reporte Diario de Actividades", style_title))
+        elements.append(Paragraph("Reporte Diario de Actividades", styles["Title"]))
         elements.append(Spacer(1, 12))
 
-        data = [["Grupo", "Cliente", "Dirección", "Hora inicio", "Tiempo estimado", "Tiempo viaje", "Duración (HH:MM:SS)"]]
+        data = [["Grupo", "Cliente", "Dirección", "Hora inicio", "Tiempo estimado", "Tiempo viaje", "Duración"]]
         for _, row in df.iterrows():
-            data.append(list(row.values))
+            fila = [str(row[c]) for c in df.columns]
+            data.append(fila)
 
-        col_widths = [1.2*inch, 1.3*inch, 1.6*inch, 1*inch, 1.2*inch, 1.2*inch, 1.2*inch]
-        table = Table(data, colWidths=col_widths, repeatRows=1)
+        # Columnas ajustadas al contenido
+        table = Table(data, repeatRows=1)
         table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.Color(0.2, 0.4, 0.6)),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2E75B6")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
             ("ALIGN", (0, 0), (-1, -1), "CENTER"),
             ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, -1), 9),
-            ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("WORDWRAP", (0, 0), (-1, -1), None)
         ]))
-
         elements.append(table)
         doc.build(elements)
+        pdf_buffer.seek(0)
 
-        st.download_button("⬇️ Descargar CSV", open(csv_filename, "rb"), file_name=csv_filename)
-        st.download_button("⬇️ Descargar PDF", open(pdf_filename, "rb"), file_name=pdf_filename)
+        # --- BOTONES DE DESCARGA ---
+        st.download_button("⬇️ Descargar CSV", data=csv_buffer, file_name="reporte.csv", mime="text/csv")
+        st.download_button("⬇️ Descargar PDF", data=pdf_buffer, file_name="reporte.pdf", mime="application/pdf")
         st.success("✅ Reporte generado correctamente.")
     else:
         st.info("No hay datos para generar el reporte.")

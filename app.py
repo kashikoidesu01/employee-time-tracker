@@ -138,7 +138,10 @@ if st.button("📄 Terminar y generar reporte (CSV / PDF)"):
         datos = []
         for g, t in st.session_state.turnos_completos.items():
             for pausa in t.get("pausas", []):
-                duracion = str(pd.to_timedelta(t["duracion"], unit="s"))
+                # Convertimos duración a formato limpio HH:MM:SS
+                duracion_timedelta = pd.to_timedelta(t["duracion"], unit="s")
+                duracion = str(duracion_timedelta).split(".")[0].replace("0 days ", "")
+
                 datos.append({
                     "grupo": g,
                     "cliente": pausa.get("cliente", ""),
@@ -150,47 +153,51 @@ if st.button("📄 Terminar y generar reporte (CSV / PDF)"):
                 })
 
         df = pd.DataFrame(datos)
+        csv_filename = f"reporte_{date.today().strftime('%Y-%m-%d')}.csv"
+        df.to_csv(csv_filename, index=False)
 
-        # --- DESCARGA CSV (usando BytesIO en memoria) ---
-        csv_buffer = BytesIO()
-        df.to_csv(csv_buffer, index=False)
-        csv_buffer.seek(0)
-
-        # --- GENERAR PDF CON AJUSTE AUTOMÁTICO ---
-        pdf_buffer = BytesIO()
+        # --- GENERAR PDF ---
+        pdf_filename = f"reporte_{date.today().strftime('%Y-%m-%d')}.pdf"
         doc = SimpleDocTemplate(
-            pdf_buffer,
-            pagesize=landscape(letter),
-            rightMargin=20, leftMargin=20, topMargin=20, bottomMargin=20
+            pdf_filename,
+            pagesize=letter,
+            rightMargin=30,
+            leftMargin=30,
+            topMargin=30,
+            bottomMargin=30
         )
         elements = []
         styles = getSampleStyleSheet()
-        elements.append(Paragraph("Reporte Diario de Actividades", styles["Title"]))
+        style_title = styles["Title"]
+
+        elements.append(Paragraph("Reporte Diario de Actividades", style_title))
         elements.append(Spacer(1, 12))
 
-        data = [["Grupo", "Cliente", "Dirección", "Hora inicio", "Tiempo estimado", "Tiempo viaje", "Duración"]]
+        data = [["Grupo", "Cliente", "Dirección", "Hora inicio", "Tiempo estimado", "Tiempo viaje", "Duración (HH:MM:SS)"]]
         for _, row in df.iterrows():
-            fila = [str(row[c]) for c in df.columns]
-            data.append(fila)
+            data.append(list(row.values))
 
-        # Columnas ajustadas al contenido
-        table = Table(data, repeatRows=1)
+        # Ajuste de ancho de columnas más equilibrado
+        col_widths = [1.1*inch, 1.2*inch, 1.4*inch, 1.0*inch, 1.1*inch, 1.1*inch, 1.0*inch]
+        table = Table(data, colWidths=col_widths, repeatRows=1)
         table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2E75B6")),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.Color(0.2, 0.4, 0.6)),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
             ("ALIGN", (0, 0), (-1, -1), "CENTER"),
             ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, -1), 8),
-            ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("WORDWRAP", (0, 0), (-1, -1), None)
         ]))
+
         elements.append(table)
         doc.build(elements)
-        pdf_buffer.seek(0)
 
-        # --- BOTONES DE DESCARGA ---
-        st.download_button("⬇️ Descargar CSV", data=csv_buffer, file_name="reporte.csv", mime="text/csv")
-        st.download_button("⬇️ Descargar PDF", data=pdf_buffer, file_name="reporte.pdf", mime="application/pdf")
+        # Botones de descarga
+        st.download_button("⬇️ Descargar CSV", open(csv_filename, "rb"), file_name=csv_filename)
+        st.download_button("⬇️ Descargar PDF", open(pdf_filename, "rb"), file_name=pdf_filename)
         st.success("✅ Reporte generado correctamente.")
     else:
         st.info("No hay datos para generar el reporte.")

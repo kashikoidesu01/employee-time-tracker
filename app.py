@@ -132,35 +132,63 @@ for g, t in st.session_state.turnos.items():
     """, unsafe_allow_html=True)
 
 # --- BOTÓN FINAL PARA GENERAR REPORTES ---
+import os
+from glob import glob
+
 st.markdown("---")
+
+# Inicializar variables de sesión si no existen
+if "ultimo_reporte_pdf" not in st.session_state:
+    st.session_state.ultimo_reporte_pdf = None
+if "ultimo_reporte_csv" not in st.session_state:
+    st.session_state.ultimo_reporte_csv = None
+
+# Botón para generar el reporte
 if st.button("📄 Terminar y generar reporte (CSV / PDF)"):
     if st.session_state.turnos_completos:
+        hoy = date.today()
         datos = []
-        for g, t in st.session_state.turnos_completos.items():
-            for pausa in t.get("pausas", []):
-                # Convertimos duración a formato limpio HH:MM:SS
-                duracion_timedelta = pd.to_timedelta(t["duracion"], unit="s")
-                duracion = str(duracion_timedelta).split(".")[0].replace("0 days ", "")
 
-                datos.append({
-                    "grupo": g,
-                    "cliente": pausa.get("cliente", ""),
-                    "direccion": pausa.get("direccion", ""),
-                    "hora_inicio": pausa.get("hora_inicio", ""),
-                    "tiempo_estimado": pausa.get("tiempo_estimado", ""),
-                    "tiempo_viaje": pausa.get("tiempo_viaje", ""),
-                    "duracion": duracion
-                })
+        # Filtrar solo los turnos del día actual
+        for g, t in st.session_state.turnos_completos.items():
+            if t["inicio"].date() == hoy:
+                for pausa in t.get("pausas", []):
+                    duracion_timedelta = pd.to_timedelta(t["duracion"], unit="s")
+                    duracion = str(duracion_timedelta).split(".")[0].replace("0 days ", "")
+
+                    datos.append({
+                        "grupo": g,
+                        "cliente": pausa.get("cliente", ""),
+                        "direccion": pausa.get("direccion", ""),
+                        "hora_inicio": pausa.get("hora_inicio", ""),
+                        "tiempo_estimado": pausa.get("tiempo_estimado", ""),
+                        "tiempo_viaje": pausa.get("tiempo_viaje", ""),
+                        "duracion": duracion
+                    })
+
+        if not datos:
+            st.warning("⚠️ No hay datos de hoy para generar el reporte.")
+            st.stop()
 
         df = pd.DataFrame(datos)
-        csv_filename = f"reporte_{date.today().strftime('%Y-%m-%d')}.csv"
+
+        # Crear nombre único con formato mm-dd-yy-XX
+        fecha_str = hoy.strftime("%m-%d-%y")
+        base_name = f"{fecha_str}"
+        existing_files = glob(f"{base_name}-*.pdf")
+        next_number = len(existing_files) + 1
+        file_suffix = f"{next_number:02d}"
+
+        csv_filename = f"{base_name}-{file_suffix}.csv"
+        pdf_filename = f"{base_name}-{file_suffix}.pdf"
+
+        # Guardar CSV
         df.to_csv(csv_filename, index=False)
 
-        # --- GENERAR PDF ---
-        pdf_filename = f"reporte_{date.today().strftime('%Y-%m-%d')}.pdf"
+        # Generar PDF
         doc = SimpleDocTemplate(
             pdf_filename,
-            pagesize=letter,
+            pagesize=landscape(letter),  # más ancho (horizontal)
             rightMargin=30,
             leftMargin=30,
             topMargin=30,
@@ -177,8 +205,7 @@ if st.button("📄 Terminar y generar reporte (CSV / PDF)"):
         for _, row in df.iterrows():
             data.append(list(row.values))
 
-        # Ajuste de ancho de columnas más equilibrado
-        col_widths = [1.1*inch, 1.2*inch, 1.4*inch, 1.0*inch, 1.1*inch, 1.1*inch, 1.0*inch]
+        col_widths = [1.3*inch, 1.4*inch, 2.0*inch, 1.1*inch, 1.3*inch, 1.3*inch, 1.3*inch]
         table = Table(data, colWidths=col_widths, repeatRows=1)
         table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.Color(0.2, 0.4, 0.6)),
@@ -189,15 +216,34 @@ if st.button("📄 Terminar y generar reporte (CSV / PDF)"):
             ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
             ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("WORDWRAP", (0, 0), (-1, -1), None)
         ]))
 
         elements.append(table)
         doc.build(elements)
 
-        # Botones de descarga
-        st.download_button("⬇️ Descargar CSV", open(csv_filename, "rb"), file_name=csv_filename)
-        st.download_button("⬇️ Descargar PDF", open(pdf_filename, "rb"), file_name=pdf_filename)
-        st.success("✅ Reporte generado correctamente.")
-    else:
-        st.info("No hay datos para generar el reporte.")
+        # Guardar nombres en session_state para mostrar botones
+        st.session_state.ultimo_reporte_csv = csv_filename
+        st.session_state.ultimo_reporte_pdf = pdf_filename
+
+        st.success(f"✅ Reporte generado correctamente: {pdf_filename}")
+
+# Mostrar botones de descarga si existen archivos generados
+if st.session_state.ultimo_reporte_csv and os.path.exists(st.session_state.ultimo_reporte_csv):
+    with open(st.session_state.ultimo_reporte_csv, "rb") as csv_file:
+        st.download_button(
+            "⬇️ Descargar CSV",
+            csv_file,
+            file_name=st.session_state.ultimo_reporte_csv,
+            mime="text/csv",
+            key="download_csv"
+        )
+
+if st.session_state.ultimo_reporte_pdf and os.path.exists(st.session_state.ultimo_reporte_pdf):
+    with open(st.session_state.ultimo_reporte_pdf, "rb") as pdf_file:
+        st.download_button(
+            "⬇️ Descargar PDF",
+            pdf_file,
+            file_name=st.session_state.ultimo_reporte_pdf,
+            mime="application/pdf",
+            key="download_pdf"
+        )

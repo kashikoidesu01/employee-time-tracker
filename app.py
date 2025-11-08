@@ -65,13 +65,17 @@ with col2:
     if grupo in st.session_state.turnos and st.button("⏸️ Pausar / Reanudar"):
         turno = st.session_state.turnos[grupo]
         if not turno["pausado"]:
+            # --- Pausar turno ---
             turno["pausado"] = True
             turno["pausa_inicio"] = datetime.now(ZoneInfo("America/New_York"))
-            st.session_state.form_abierto = grupo
+            st.session_state.form_abierto = grupo  # Abrir formulario
+            st.info(f"{grupo} pausó trabajo a las {hora_actual()}")
         else:
+            # --- Reanudar turno ---
             pausa_duracion = (datetime.now(ZoneInfo("America/New_York")) - turno["pausa_inicio"]).total_seconds()
             turno["tiempo_total"] += pausa_duracion
             turno["pausado"] = False
+            st.session_state.form_abierto = None  # Cerrar formulario
             st.info(f"{grupo} reanudó trabajo a las {hora_actual()}")
 
 with col3:
@@ -87,11 +91,11 @@ if st.session_state.form_abierto:
     g = st.session_state.form_abierto
     st.markdown(f"### 📝 Registrar pausa para {g}")
     with st.form(f"form_{g}"):
-        cliente = st.text_input("Cliente")
-        direccion = st.text_input("Dirección")
-        hora_inicio = st.text_input("Hora de inicio", value=hora_actual())
-        tiempo_estimado = st.text_input("Tiempo estimado (min)")
-        tiempo_viaje = st.text_input("Tiempo de viaje (min)")
+        cliente = st.text_input("Cliente", value="")
+        direccion = st.text_input("Dirección", value="")
+        hora_inicio = st.text_input("Hora de inicio", value="")  # AHORA VACÍO
+        tiempo_estimado = st.text_input("Tiempo estimado (min)", value="")
+        tiempo_viaje = st.text_input("Tiempo de viaje (min)", value="")
         guardar = st.form_submit_button("Guardar información de pausa")
 
         if guardar:

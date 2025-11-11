@@ -144,6 +144,7 @@ if "ultimo_reporte_pdf" not in st.session_state:
 if "ultimo_reporte_csv" not in st.session_state:
     st.session_state.ultimo_reporte_csv = None
 
+##---------------------------------------------------##
 if st.button("📄 Terminar y generar reporte (CSV / PDF)"):
     if st.session_state.turnos_completos:
         hoy = date.today()
@@ -151,17 +152,29 @@ if st.button("📄 Terminar y generar reporte (CSV / PDF)"):
 
         for g, t in st.session_state.turnos_completos.items():
             if t["inicio"].date() == hoy:
+                duracion_real = (t["duracion"] / 60)  # segundos → minutos
+
                 for pausa in t.get("pausas", []):
+                    try:
+                        tiempo_estimado = float(pausa.get("tiempo_estimado", 0))
+                    except ValueError:
+                        tiempo_estimado = 0.0
+
+                    # Calcular diferencia (estimado - real)
+                    diferencia = round(tiempo_estimado - duracion_real, 1)
+
                     duracion_timedelta = pd.to_timedelta(t["duracion"], unit="s")
-                    duracion = str(duracion_timedelta).split(".")[0].replace("0 days ", "")
+                    duracion_str = str(duracion_timedelta).split(".")[0].replace("0 days ", "")
+
                     datos.append({
                         "grupo": g,
                         "cliente": pausa.get("cliente", ""),
                         "direccion": pausa.get("direccion", ""),
                         "hora_inicio": pausa.get("hora_inicio", ""),
-                        "tiempo_estimado": pausa.get("tiempo_estimado", ""),
-                        "tiempo_viaje": pausa.get("tiempo_viaje", ""),
-                        "duracion": duracion
+                        "tiempo_estimado (min)": tiempo_estimado,
+                        "tiempo_viaje (min)": pausa.get("tiempo_viaje", ""),
+                        "duracion_real": duracion_str,
+                        "diferencia (min)": diferencia
                     })
 
         if not datos:
@@ -170,26 +183,37 @@ if st.button("📄 Terminar y generar reporte (CSV / PDF)"):
 
         df = pd.DataFrame(datos)
 
+        # --- NOMBRE ÚNICO PARA ARCHIVOS ---
+        from glob import glob
+        import os
+
         fecha_str = hoy.strftime("%m-%d-%y")
-        base_name = f"{fecha_str}"
-        existing_files = glob(f"{base_name}-*.pdf")
+        existing_files = glob(f"{fecha_str}-*.pdf")
         next_number = len(existing_files) + 1
         file_suffix = f"{next_number:02d}"
 
-        csv_filename = f"{base_name}-{file_suffix}.csv"
-        pdf_filename = f"{base_name}-{file_suffix}.pdf"
+        csv_filename = f"{fecha_str}-{file_suffix}.csv"
+        pdf_filename = f"{fecha_str}-{file_suffix}.pdf"
 
+        # --- GUARDAR CSV ---
         df.to_csv(csv_filename, index=False)
 
-        # --- PDF mejorado con ajuste de texto ---
+        # --- GENERAR PDF ---
+        from reportlab.platypus import Paragraph, Spacer, Table, TableStyle, SimpleDocTemplate
+        from reportlab.lib.pagesizes import letter, landscape
+        from reportlab.lib import colors
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import inch
+
         doc = SimpleDocTemplate(
             pdf_filename,
-            pagesize=(11.7 * inch, 8.5 * inch),
+            pagesize=landscape(letter),
             rightMargin=30,
             leftMargin=30,
             topMargin=30,
             bottomMargin=30
         )
+
         elements = []
         styles = getSampleStyleSheet()
         style_title = styles["Title"]
@@ -198,19 +222,33 @@ if st.button("📄 Terminar y generar reporte (CSV / PDF)"):
         elements.append(Paragraph(f"Reporte Diario de Actividades – {hoy.strftime('%d/%m/%Y')}", style_title))
         elements.append(Spacer(1, 12))
 
-        data = [["Grupo", "Cliente", "Dirección", "Hora inicio", "Tiempo estimado", "Tiempo viaje", "Duración (HH:MM:SS)"]]
+        data = [["Grupo", "Cliente", "Dirección", "Hora inicio", "Estimado (min)", "Viaje (min)", "Duración", "Dif. (min)"]]
+
         for _, row in df.iterrows():
+            diferencia_valor = row["diferencia (min)"]
+
+            # Color condicional
+            if diferencia_valor > 0:
+                color_html = "green"
+            elif diferencia_valor < 0:
+                color_html = "red"
+            else:
+                color_html = "black"
+
+            diferencia_texto = f"<font color='{color_html}'>{diferencia_valor:+.1f}</font>"
+
             data.append([
                 Paragraph(str(row["grupo"]), style_cell),
                 Paragraph(str(row["cliente"]), style_cell),
                 Paragraph(str(row["direccion"]), style_cell),
                 Paragraph(str(row["hora_inicio"]), style_cell),
-                Paragraph(str(row["tiempo_estimado"]), style_cell),
-                Paragraph(str(row["tiempo_viaje"]), style_cell),
-                Paragraph(str(row["duracion"]), style_cell),
+                Paragraph(str(row["tiempo_estimado (min)"]), style_cell),
+                Paragraph(str(row["tiempo_viaje (min)"]), style_cell),
+                Paragraph(str(row["duracion_real"]), style_cell),
+                Paragraph(diferencia_texto, style_cell),
             ])
 
-        col_widths = [1.2*inch, 1.5*inch, 3.0*inch, 1.0*inch, 1.2*inch, 1.2*inch, 1.0*inch]
+        col_widths = [1.2*inch, 1.5*inch, 2.8*inch, 1.0*inch, 1.2*inch, 1.2*inch, 1.4*inch, 1.0*inch]
         table = Table(data, colWidths=col_widths, repeatRows=1)
         table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.Color(0.2, 0.4, 0.6)),
@@ -226,27 +264,30 @@ if st.button("📄 Terminar y generar reporte (CSV / PDF)"):
         elements.append(table)
         doc.build(elements)
 
+        # --- GUARDAR NOMBRES DE ARCHIVOS ---
         st.session_state.ultimo_reporte_csv = csv_filename
         st.session_state.ultimo_reporte_pdf = pdf_filename
+
         st.success(f"✅ Reporte generado correctamente: {pdf_filename}")
 
-# --- BOTONES DE DESCARGA ESTABLES ---
-if st.session_state.ultimo_reporte_csv and os.path.exists(st.session_state.ultimo_reporte_csv):
+# --- BOTONES DE DESCARGA ---
+if "ultimo_reporte_csv" in st.session_state and os.path.exists(st.session_state.ultimo_reporte_csv):
     with open(st.session_state.ultimo_reporte_csv, "rb") as csv_file:
         st.download_button(
             "⬇️ Descargar CSV",
             csv_file,
             file_name=st.session_state.ultimo_reporte_csv,
             mime="text/csv",
-            key=f"download_csv_{int(time.time())}"
+            key="download_csv"
         )
 
-if st.session_state.ultimo_reporte_pdf and os.path.exists(st.session_state.ultimo_reporte_pdf):
+if "ultimo_reporte_pdf" in st.session_state and os.path.exists(st.session_state.ultimo_reporte_pdf):
     with open(st.session_state.ultimo_reporte_pdf, "rb") as pdf_file:
         st.download_button(
             "⬇️ Descargar PDF",
             pdf_file,
             file_name=st.session_state.ultimo_reporte_pdf,
             mime="application/pdf",
-            key=f"download_pdf_{int(time.time())}"
+            key="download_pdf"
         )
+

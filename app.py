@@ -4,11 +4,14 @@ import pandas as pd
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
 from io import BytesIO
-from reportlab.lib.pagesizes import letter, landscape
+from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.lib.units import inch
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+import os
+from glob import glob
+import time
 
 # --- CONFIGURACIÓN INICIAL ---
 st.set_page_config(page_title="Registro de Tiempo de Empleados", page_icon="⏱️", layout="centered")
@@ -109,7 +112,9 @@ if st.session_state.form_abierto:
             st.success(f"Pausa registrada para {g}")
 
 # --- REFRESCO AUTOMÁTICO ---
-st_autorefresh(interval=1000, key="refresco_cronometro")
+# 🔧 solo refrescar si NO hay formulario abierto
+if not st.session_state.form_abierto:
+    st_autorefresh(interval=1000, key="refresco_cronometro")
 
 # --- MOSTRAR GRUPOS ACTIVOS ---
 st.markdown("---")
@@ -131,10 +136,7 @@ for g, t in st.session_state.turnos.items():
     - Tiempo transcurrido: <span class='timer'>{int(horas):02}:{int(minutos):02}:{int(segundos):02}</span>
     """, unsafe_allow_html=True)
 
-# --- BOTÓN FINAL PARA GENERAR REPORTES ---
-import os
-from glob import glob
-
+# --- GENERAR REPORTES ---
 st.markdown("---")
 
 if "ultimo_reporte_pdf" not in st.session_state:
@@ -177,13 +179,12 @@ if st.button("📄 Terminar y generar reporte (CSV / PDF)"):
         csv_filename = f"{base_name}-{file_suffix}.csv"
         pdf_filename = f"{base_name}-{file_suffix}.pdf"
 
-        # Guardar CSV
         df.to_csv(csv_filename, index=False)
 
-        # --- CREACIÓN DEL PDF (mejorado) ---
+        # --- PDF mejorado con ajuste de texto ---
         doc = SimpleDocTemplate(
             pdf_filename,
-            pagesize=(11.7 * inch, 8.5 * inch),  # más ancho que letter horizontal
+            pagesize=(11.7 * inch, 8.5 * inch),
             rightMargin=30,
             leftMargin=30,
             topMargin=30,
@@ -194,7 +195,7 @@ if st.button("📄 Terminar y generar reporte (CSV / PDF)"):
         style_title = styles["Title"]
         style_cell = ParagraphStyle(name="CellStyle", fontSize=9, alignment=1, leading=12)
 
-        elements.append(Paragraph("Reporte Diario de Actividades", style_title))
+        elements.append(Paragraph(f"Reporte Diario de Actividades – {hoy.strftime('%d/%m/%Y')}", style_title))
         elements.append(Spacer(1, 12))
 
         data = [["Grupo", "Cliente", "Dirección", "Hora inicio", "Tiempo estimado", "Tiempo viaje", "Duración (HH:MM:SS)"]]
@@ -230,7 +231,6 @@ if st.button("📄 Terminar y generar reporte (CSV / PDF)"):
         st.success(f"✅ Reporte generado correctamente: {pdf_filename}")
 
 # --- BOTONES DE DESCARGA ESTABLES ---
-import time
 if st.session_state.ultimo_reporte_csv and os.path.exists(st.session_state.ultimo_reporte_csv):
     with open(st.session_state.ultimo_reporte_csv, "rb") as csv_file:
         st.download_button(

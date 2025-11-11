@@ -7,7 +7,7 @@ from io import BytesIO
 from reportlab.lib.pagesizes import letter, landscape
 from reportlab.lib import colors
 from reportlab.lib.units import inch
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
 # --- CONFIGURACIÓN INICIAL ---
@@ -137,25 +137,21 @@ from glob import glob
 
 st.markdown("---")
 
-# Inicializar variables de sesión si no existen
 if "ultimo_reporte_pdf" not in st.session_state:
     st.session_state.ultimo_reporte_pdf = None
 if "ultimo_reporte_csv" not in st.session_state:
     st.session_state.ultimo_reporte_csv = None
 
-# Botón para generar el reporte
 if st.button("📄 Terminar y generar reporte (CSV / PDF)"):
     if st.session_state.turnos_completos:
         hoy = date.today()
         datos = []
 
-        # Filtrar solo los turnos del día actual
         for g, t in st.session_state.turnos_completos.items():
             if t["inicio"].date() == hoy:
                 for pausa in t.get("pausas", []):
                     duracion_timedelta = pd.to_timedelta(t["duracion"], unit="s")
                     duracion = str(duracion_timedelta).split(".")[0].replace("0 days ", "")
-
                     datos.append({
                         "grupo": g,
                         "cliente": pausa.get("cliente", ""),
@@ -172,7 +168,6 @@ if st.button("📄 Terminar y generar reporte (CSV / PDF)"):
 
         df = pd.DataFrame(datos)
 
-        # Crear nombre único con formato mm-dd-yy-XX
         fecha_str = hoy.strftime("%m-%d-%y")
         base_name = f"{fecha_str}"
         existing_files = glob(f"{base_name}-*.pdf")
@@ -185,10 +180,10 @@ if st.button("📄 Terminar y generar reporte (CSV / PDF)"):
         # Guardar CSV
         df.to_csv(csv_filename, index=False)
 
-        # Generar PDF
+        # --- CREACIÓN DEL PDF (mejorado) ---
         doc = SimpleDocTemplate(
             pdf_filename,
-            pagesize=landscape(letter),  # más ancho (horizontal)
+            pagesize=(11.7 * inch, 8.5 * inch),  # más ancho que letter horizontal
             rightMargin=30,
             leftMargin=30,
             topMargin=30,
@@ -197,15 +192,24 @@ if st.button("📄 Terminar y generar reporte (CSV / PDF)"):
         elements = []
         styles = getSampleStyleSheet()
         style_title = styles["Title"]
+        style_cell = ParagraphStyle(name="CellStyle", fontSize=9, alignment=1, leading=12)
 
         elements.append(Paragraph("Reporte Diario de Actividades", style_title))
         elements.append(Spacer(1, 12))
 
         data = [["Grupo", "Cliente", "Dirección", "Hora inicio", "Tiempo estimado", "Tiempo viaje", "Duración (HH:MM:SS)"]]
         for _, row in df.iterrows():
-            data.append(list(row.values))
+            data.append([
+                Paragraph(str(row["grupo"]), style_cell),
+                Paragraph(str(row["cliente"]), style_cell),
+                Paragraph(str(row["direccion"]), style_cell),
+                Paragraph(str(row["hora_inicio"]), style_cell),
+                Paragraph(str(row["tiempo_estimado"]), style_cell),
+                Paragraph(str(row["tiempo_viaje"]), style_cell),
+                Paragraph(str(row["duracion"]), style_cell),
+            ])
 
-        col_widths = [1.3*inch, 1.4*inch, 2.0*inch, 1.1*inch, 1.3*inch, 1.3*inch, 1.3*inch]
+        col_widths = [1.2*inch, 1.5*inch, 3.0*inch, 1.0*inch, 1.2*inch, 1.2*inch, 1.0*inch]
         table = Table(data, colWidths=col_widths, repeatRows=1)
         table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.Color(0.2, 0.4, 0.6)),
@@ -221,13 +225,12 @@ if st.button("📄 Terminar y generar reporte (CSV / PDF)"):
         elements.append(table)
         doc.build(elements)
 
-        # Guardar nombres en session_state para mostrar botones
         st.session_state.ultimo_reporte_csv = csv_filename
         st.session_state.ultimo_reporte_pdf = pdf_filename
-
         st.success(f"✅ Reporte generado correctamente: {pdf_filename}")
 
-# Mostrar botones de descarga si existen archivos generados
+# --- BOTONES DE DESCARGA ESTABLES ---
+import time
 if st.session_state.ultimo_reporte_csv and os.path.exists(st.session_state.ultimo_reporte_csv):
     with open(st.session_state.ultimo_reporte_csv, "rb") as csv_file:
         st.download_button(
@@ -235,7 +238,7 @@ if st.session_state.ultimo_reporte_csv and os.path.exists(st.session_state.ultim
             csv_file,
             file_name=st.session_state.ultimo_reporte_csv,
             mime="text/csv",
-            key="download_csv"
+            key=f"download_csv_{int(time.time())}"
         )
 
 if st.session_state.ultimo_reporte_pdf and os.path.exists(st.session_state.ultimo_reporte_pdf):
@@ -245,5 +248,5 @@ if st.session_state.ultimo_reporte_pdf and os.path.exists(st.session_state.ultim
             pdf_file,
             file_name=st.session_state.ultimo_reporte_pdf,
             mime="application/pdf",
-            key="download_pdf"
+            key=f"download_pdf_{int(time.time())}"
         )

@@ -145,44 +145,69 @@ if g["trabajos"] and g["trabajos"][-1]["fin_trabajo"] is None:
         g["estado_inicio"] = now()
 
 # ================================
-# BOTÓN ACTUALIZAR DRIVE
+# BOTÓN ACTUALIZAR DRIVE (FORMATO EXACTO SHEET)
 # ================================
 
 st.divider()
 st.subheader("🔄 Sincronizar con Google Drive")
 
+def formato_tiempo(td):
+    if not td:
+        return "0"
+    total_min = int(td.total_seconds() // 60)
+    horas = total_min // 60
+    minutos = total_min % 60
+
+    if horas > 0 and minutos > 0:
+        return f"{horas} H {minutos} MIN"
+    elif horas > 0:
+        return f"{horas} H"
+    elif minutos > 0:
+        return f"{minutos} MIN"
+    else:
+        return "0"
+
 if st.button("🔄 Actualizar Drive"):
     try:
         client = conectar_drive()
         spreadsheet = client.open("PLANILLA_HORAS_EMPLEADOS_2026")
-        worksheet = spreadsheet.sheet1  # primera hoja
+        worksheet = spreadsheet.worksheet("PLANTILLA")
 
-        rows = []
+        mapa_filas = {
+            "Grupo Cecilia": 3,
+            "Grupo Elizabeth": 13,
+            "Grupo Shirley": 23
+        }
 
-        for grupo, g in st.session_state.grupos.items():
-            for t in g["trabajos"]:
-                rows.append([
-                    t["grupo"],
-                    t["cliente"],
-                    t["direccion"],
-                    t["inicio_turno"].strftime("%H:%M"),
-                    t["inicio_trabajo"].strftime("%H:%M"),
-                    f"{t['estimado_min']//60}H {t['estimado_min']%60}MIN",
-                    format_td(t["tiempo_real"]) if t["tiempo_real"] else ""
-                ])
+        for nombre_grupo, g_data in st.session_state.grupos.items():
 
-        if rows:
-            worksheet.clear()
-            worksheet.update(
-                "A1",
-                [["Grupo","Cliente","Dirección","Inicio Turno",
-                  "Inicio Trabajo","Estimado","Tiempo Trabajado"]] + rows
-            )
+            if nombre_grupo not in mapa_filas:
+                continue
 
-        st.success("Datos enviados correctamente a Google Drive ✅")
+            fila_inicio = mapa_filas[nombre_grupo]
+            trabajos = g_data["trabajos"]
+
+            # Limitar a máximo 4 trabajos por bloque
+            trabajos = trabajos[:4]
+
+            for i, t in enumerate(trabajos):
+
+                fila = fila_inicio + i
+
+                ordinal = ["1ST JOB", "2ND JOB", "3RD JOB", "4TH JOB"][i]
+
+                tiempo_trabajado = formato_tiempo(t["tiempo_real"])
+
+                # Escribimos exactamente como tu Sheet lo espera
+                worksheet.update(f"C{fila}", [[ordinal]])
+                worksheet.update(f"D{fila}", [[tiempo_trabajado]])
+                worksheet.update(f"E{fila}", [["0"]])  # Tiempo viaje por ahora 0
+
+        st.success("Datos enviados con formato correcto ✅")
 
     except Exception as e:
         st.error(f"Error al actualizar Drive: {e}")
+
 
 # ================================
 # GENERAR REPORTE PDF

@@ -3,3 +3,7 @@ streamlit-autorefresh
 pandas
 reportlab
 pytz
+gspread
+google-auth
+google-auth-oauthlib
+google-auth-httplib2

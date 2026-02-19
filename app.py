@@ -5,7 +5,7 @@
 
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
 import pandas as pd
 from io import BytesIO
@@ -13,6 +13,21 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
+
+# ====== NUEVO: GOOGLE DRIVE ======
+import gspread
+from google.oauth2.service_account import Credentials
+
+@st.cache_resource
+def conectar_drive():
+    credentials = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=[
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ],
+    )
+    return gspread.authorize(credentials)
 
 # ================================
 # CONFIG
@@ -130,7 +145,47 @@ if g["trabajos"] and g["trabajos"][-1]["fin_trabajo"] is None:
         g["estado_inicio"] = now()
 
 # ================================
-# GENERAR REPORTE
+# BOTÓN ACTUALIZAR DRIVE
+# ================================
+
+st.divider()
+st.subheader("🔄 Sincronizar con Google Drive")
+
+if st.button("🔄 Actualizar Drive"):
+    try:
+        client = conectar_drive()
+        spreadsheet = client.open("PLANILLA_HORAS_EMPLEADOS_2026")
+        worksheet = spreadsheet.sheet1  # primera hoja
+
+        rows = []
+
+        for grupo, g in st.session_state.grupos.items():
+            for t in g["trabajos"]:
+                rows.append([
+                    t["grupo"],
+                    t["cliente"],
+                    t["direccion"],
+                    t["inicio_turno"].strftime("%H:%M"),
+                    t["inicio_trabajo"].strftime("%H:%M"),
+                    f"{t['estimado_min']//60}H {t['estimado_min']%60}MIN",
+                    format_td(t["tiempo_real"]) if t["tiempo_real"] else ""
+                ])
+
+        if rows:
+            worksheet.clear()
+            worksheet.update(
+                "A1",
+                [["Grupo","Cliente","Dirección","Inicio Turno",
+                  "Inicio Trabajo","Estimado","Tiempo Trabajado"]] + rows
+            )
+
+        st.success("Datos enviados correctamente a Google Drive ✅")
+
+    except Exception as e:
+        st.error(f"Error al actualizar Drive: {e}")
+
+# ================================
+# GENERAR REPORTE PDF
 # ================================
 
 if st.button("📄 Generar reporte"):
@@ -175,4 +230,3 @@ if st.session_state.reporte_generado:
 
     st.download_button("⬇ Descargar PDF", buffer.getvalue(), "reporte_grupos.pdf")
     st.download_button("⬇ Descargar CSV", df.to_csv(index=False), "reporte_grupos.csv")
-

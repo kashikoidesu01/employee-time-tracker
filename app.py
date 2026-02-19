@@ -170,7 +170,7 @@ def formato_tiempo(td):
 if st.button("🔄 Actualizar Drive"):
     try:
         client = conectar_drive()
-        spreadsheet = client.open("PLANILLA_HORAS_EMPLEADOS_2026")
+        spreadsheet = client.open("PLANILLA_HORAS_REALES_2026")
         worksheet = spreadsheet.worksheet("PLANTILLA")
 
         mapa_filas = {

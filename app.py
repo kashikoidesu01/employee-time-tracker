@@ -133,16 +133,27 @@ if submit:
         g2["estado_inicio"] = now()
 
 # ================================
-# TERMINAR TRABAJO
+# TERMINAR TRABAJO (FIX BUG)
 # ================================
 
-if g["trabajos"] and g["trabajos"][-1]["fin_trabajo"] is None:
-    if st.button("✅ Terminar trabajo"):
-        t = g["trabajos"][-1]
-        t["fin_trabajo"] = now()
-        t["tiempo_real"] = now() - t["inicio_trabajo"]
-        g["estado"] = "Viajando"
-        g["estado_inicio"] = now()
+trabajo_activo = None
+grupo_activo_nombre = None
+
+for nombre, grupo_data in st.session_state.grupos.items():
+    if grupo_data["trabajos"]:
+        ultimo = grupo_data["trabajos"][-1]
+        if ultimo["fin_trabajo"] is None:
+            trabajo_activo = ultimo
+            grupo_activo_nombre = nombre
+            break
+
+if trabajo_activo:
+    if st.button(f"✅ Terminar trabajo ({grupo_activo_nombre})"):
+        trabajo_activo["fin_trabajo"] = now()
+        trabajo_activo["tiempo_real"] = now() - trabajo_activo["inicio_trabajo"]
+
+        st.session_state.grupos[grupo_activo_nombre]["estado"] = "Viajando"
+        st.session_state.grupos[grupo_activo_nombre]["estado_inicio"] = now()
 
 # ================================
 # BOTÓN ACTUALIZAR DRIVE (FORMATO EXACTO SHEET)

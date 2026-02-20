@@ -133,27 +133,43 @@ if submit:
         g2["estado_inicio"] = now()
 
 # ================================
-# TERMINAR TRABAJO (FIX BUG)
+# GESTIÓN DE ESTADO POR GRUPO
 # ================================
 
-trabajo_activo = None
-grupo_activo_nombre = None
+st.subheader("🔄 Gestión de estado")
 
-for nombre, grupo_data in st.session_state.grupos.items():
-    if grupo_data["trabajos"]:
-        ultimo = grupo_data["trabajos"][-1]
-        if ultimo["fin_trabajo"] is None:
-            trabajo_activo = ultimo
-            grupo_activo_nombre = nombre
-            break
+grupo_estado = st.selectbox(
+    "Seleccionar grupo para gestionar",
+    GRUPOS,
+    key="selector_estado"
+)
 
-if trabajo_activo:
-    if st.button(f"✅ Terminar trabajo ({grupo_activo_nombre})"):
-        trabajo_activo["fin_trabajo"] = now()
-        trabajo_activo["tiempo_real"] = now() - trabajo_activo["inicio_trabajo"]
+g_estado = st.session_state.grupos[grupo_estado]
 
-        st.session_state.grupos[grupo_activo_nombre]["estado"] = "Viajando"
-        st.session_state.grupos[grupo_activo_nombre]["estado_inicio"] = now()
+if g_estado["jornada_activa"]:
+
+    # Si está trabajando → permitir finalizar
+    if g_estado["estado"] == "Trabajando":
+        if st.button("Finalizar trabajo", key="btn_finalizar"):
+            ahora = now()
+
+            if g_estado["trabajos"]:
+                ultimo = g_estado["trabajos"][-1]
+                if ultimo.get("fin_trabajo") is None:
+                    ultimo["fin_trabajo"] = ahora
+                    ultimo["tiempo_real"] = ahora - ultimo["inicio_trabajo"]
+
+            g_estado["estado"] = "Viajando"
+            g_estado["estado_inicio"] = ahora
+
+            st.rerun()
+
+    # Si está viajando → solo informativo
+    elif g_estado["estado"] == "Viajando":
+        st.info("El grupo está viajando. Puede iniciar un nuevo trabajo desde el formulario.")
+
+else:
+    st.warning("Este grupo no ha iniciado turno.")
 
 # ================================
 # BOTÓN ACTUALIZAR DRIVE (FORMATO EXACTO SHEET)

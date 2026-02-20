@@ -172,6 +172,45 @@ else:
     st.warning("Este grupo no ha iniciado turno.")
 
 # ================================
+# FINALIZAR TURNO
+# ================================
+
+st.divider()
+st.subheader("🏁 Finalizar turno")
+
+grupo_fin_turno = st.selectbox(
+    "Seleccionar grupo para finalizar turno",
+    GRUPOS,
+    key="selector_fin_turno"
+)
+
+g_fin = st.session_state.grupos[grupo_fin_turno]
+
+if g_fin["jornada_activa"]:
+
+    if g_fin["estado"] == "Viajando":
+
+        if st.button("Finalizar turno", key="btn_finalizar_turno"):
+
+            ahora = now()
+
+            # Cerrar jornada
+            g_fin["jornada_activa"] = False
+            g_fin["estado"] = "Fuera de turno"
+            g_fin["estado_inicio"] = None
+
+            st.success(f"{grupo_fin_turno} finalizó turno correctamente ✅")
+            st.rerun()
+
+    elif g_fin["estado"] == "Trabajando":
+        st.warning("No puedes finalizar turno mientras el grupo está trabajando.")
+    else:
+        st.info("El grupo ya está fuera de turno.")
+
+else:
+    st.info("Este grupo no tiene turno activo.")
+
+# ================================
 # BOTÓN ACTUALIZAR DRIVE (FORMATO EXACTO SHEET)
 # ================================
 

@@ -14,19 +14,24 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 
-# ====== NUEVO: GOOGLE DRIVE ======
+# ====== GOOGLE DRIVE (RENDER VERSION) ======
+import os
+import json
 import gspread
 from google.oauth2.service_account import Credentials
 
 @st.cache_resource
 def conectar_drive():
+    service_account_info = json.loads(os.environ["GCP_SERVICE_ACCOUNT"])
+
     credentials = Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"],
+        service_account_info,
         scopes=[
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive",
         ],
     )
+
     return gspread.authorize(credentials)
 
 # ================================
@@ -133,7 +138,7 @@ if submit:
         g2["estado_inicio"] = now()
 
 # ================================
-# GESTIÓN DE ESTADO POR GRUPO
+# GESTIÓN DE ESTADO
 # ================================
 
 st.subheader("🔄 Gestión de estado")
@@ -148,7 +153,6 @@ g_estado = st.session_state.grupos[grupo_estado]
 
 if g_estado["jornada_activa"]:
 
-    # Si está trabajando → permitir finalizar
     if g_estado["estado"] == "Trabajando":
         if st.button("Finalizar trabajo", key="btn_finalizar"):
             ahora = now()
@@ -161,10 +165,8 @@ if g_estado["jornada_activa"]:
 
             g_estado["estado"] = "Viajando"
             g_estado["estado_inicio"] = ahora
-
             st.rerun()
 
-    # Si está viajando → solo informativo
     elif g_estado["estado"] == "Viajando":
         st.info("El grupo está viajando. Puede iniciar un nuevo trabajo desde el formulario.")
 
@@ -192,9 +194,6 @@ if g_fin["jornada_activa"]:
 
         if st.button("Finalizar turno", key="btn_finalizar_turno"):
 
-            ahora = now()
-
-            # Cerrar jornada
             g_fin["jornada_activa"] = False
             g_fin["estado"] = "Fuera de turno"
             g_fin["estado_inicio"] = None
@@ -204,14 +203,12 @@ if g_fin["jornada_activa"]:
 
     elif g_fin["estado"] == "Trabajando":
         st.warning("No puedes finalizar turno mientras el grupo está trabajando.")
-    else:
-        st.info("El grupo ya está fuera de turno.")
 
 else:
     st.info("Este grupo no tiene turno activo.")
 
 # ================================
-# BOTÓN ACTUALIZAR DRIVE (FORMATO EXACTO SHEET)
+# SINCRONIZAR CON GOOGLE DRIVE
 # ================================
 
 st.divider()
@@ -251,38 +248,27 @@ if st.button("🔄 Actualizar Drive"):
                 continue
 
             fila_inicio = mapa_filas[nombre_grupo]
-            trabajos = g_data["trabajos"]
-
-            # Limitar a máximo 4 trabajos por bloque
-            trabajos = trabajos[:4]
+            trabajos = g_data["trabajos"][:4]
 
             for i, t in enumerate(trabajos):
-
                 fila = fila_inicio + i
-
                 ordinal = ["1ST JOB", "2ND JOB", "3RD JOB", "4TH JOB"][i]
-
                 tiempo_trabajado = formato_tiempo(t["tiempo_real"])
 
-                # Escribimos exactamente como tu Sheet lo espera
                 worksheet.update(f"C{fila}", [[ordinal]])
                 worksheet.update(f"D{fila}", [[tiempo_trabajado]])
-                worksheet.update(f"E{fila}", [["0"]])  # Tiempo viaje por ahora 0
+                worksheet.update(f"E{fila}", [["0"]])
 
         st.success("Datos enviados con formato correcto ✅")
 
     except Exception as e:
         st.error(f"Error al actualizar Drive: {e}")
 
-
 # ================================
 # GENERAR REPORTE PDF
 # ================================
 
 if st.button("📄 Generar reporte"):
-    st.session_state.reporte_generado = True
-
-if st.session_state.reporte_generado:
     rows = []
 
     for grupo, g in st.session_state.grupos.items():
